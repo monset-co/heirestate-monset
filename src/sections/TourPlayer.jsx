@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
+import { useBackCloses } from "@/lib/back";
 
 const SPEED = 1.25; // the films walk slowly; between rooms they play a little quicker
 const NEAR = 25; // a room this many seconds ahead is walked to; further, or behind, is cut to
@@ -19,6 +20,8 @@ export default function TourPlayer({ tour, unit, onClose, onBook }) {
   const [box, setBox] = useState(null); // where the film sits on screen, to place the notes
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const stops = tour.stops;
+
+  useBackCloses(onClose);
 
   // the page behind stays put; Escape closes; focus returns where it came from
   useEffect(() => {
@@ -169,7 +172,7 @@ export default function TourPlayer({ tour, unit, onClose, onBook }) {
         )}
       </div>
 
-      <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-4 px-[clamp(16px,4vw,64px)] pt-6">
+      <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-4 px-[max(clamp(16px,4vw,64px),env(safe-area-inset-left),env(safe-area-inset-right))] pt-[max(24px,env(safe-area-inset-top))]">
         <div>
           <p className="font-display text-[1.05rem] text-champagne italic">Video tour</p>
           <p className="font-display text-[clamp(1.4rem,2.4vw,2rem)] leading-tight">{unit}</p>
@@ -225,7 +228,7 @@ export default function TourPlayer({ tour, unit, onClose, onBook }) {
       )}
 
       {/* the rooms in order, each a way to go there; the arrows walk on or step back */}
-      <nav aria-label="Rooms" className="absolute inset-x-0 bottom-0 px-[clamp(16px,4vw,64px)] pb-[clamp(16px,3vh,32px)]">
+      <nav aria-label="Rooms" className="absolute inset-x-0 bottom-0 px-[max(clamp(16px,4vw,64px),env(safe-area-inset-left),env(safe-area-inset-right))] pb-[max(clamp(16px,3vh,32px),env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-4">
           <button
             type="button"

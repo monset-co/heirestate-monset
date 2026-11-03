@@ -5,6 +5,14 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+  # no other site may frame these pages (clickjacking), and the pages ask for no device features
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  # Report-only for now: violations show in the browser console, nothing is blocked. Once a week on
+  # the live sites shows none, rename the header to Content-Security-Policy. The two hashes are the
+  # inline scripts in index.html and sites.js (the "js" class and data-arrive); change either
+  # script and its hash must change too.
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'sha256-qOhFsq0QMV2REqNwk5hGH5bZE9SkX6gt6yeyKdYPv+U=' 'sha256-Y9S87d2b6GFsqAj4BWzU1IiMDnOz1aid+YavISAYXZE='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
 
 # scripts, styles and fonts carry a hash of their contents in their names: keep them for a year
 /assets/*

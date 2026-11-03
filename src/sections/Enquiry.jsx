@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
 import Edge from "@/components/Edge";
 import { siteUrl } from "@/lib/links";
 
@@ -53,12 +53,22 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
   const [f, setF] = useState({ intent: "viewing", unit: "", date: "", name: "", phone: "", email: "", message: "", consent: false });
   const [errors, setErrors] = useState({});
   const [sent, setSent] = useState(false);
+  const [done, setDone] = useState(false); // the button has turned into its tick (motionbook B5)
   const summary = useRef(null);
+  const submitBtn = useRef(null);
+  const turn = useRef(0);
+  useEffect(() => () => clearTimeout(turn.current), []);
+  const reduce = useReducedMotion();
   const today = new Date().toLocaleDateString("en-CA"); // the visitor's own today, as YYYY-MM-DD
 
   // a button elsewhere on the page chose the reason and the unit
   useEffect(() => {
-    if (ask?.n) setF((v) => ({ ...v, intent: ask.intent, unit: ask.unit ?? v.unit })), setSent(false);
+    if (!ask?.n) return;
+    clearTimeout(turn.current);
+    setF((v) => ({ ...v, intent: ask.intent, unit: ask.unit ?? v.unit }));
+    setSent(false);
+    setDone(false);
+    submitBtn.current?.style.removeProperty("width"), submitBtn.current?.style.removeProperty("padding-left"), submitBtn.current?.style.removeProperty("padding-right");
   }, [ask]);
 
   const set = (k) => (e) => {
@@ -74,8 +84,16 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
     const found = Object.fromEntries(Object.entries(CHECKS).map(([k, c]) => [k, c(f[k])]));
     setErrors(found);
     if (Object.values(found).some(Boolean)) return requestAnimationFrame(() => summary.current?.focus());
+    if (done) return;
     send(f, { agent, name, units, pick });
-    setSent(true);
+    if (reduce) return setSent(true);
+    // B5: the pill draws in to a circle, its tick pops, then the panel turns to the next step.
+    // ponytail: no spinner, mailto has nothing to wait for; show one while the POST is in flight
+    // once /api/enquiry exists
+    const b = submitBtn.current;
+    setDone(true);
+    animate(b, { width: [b.offsetWidth, b.offsetHeight], paddingLeft: 0, paddingRight: 0 }, { duration: 0.28, ease: EASE });
+    turn.current = setTimeout(() => setSent(true), 1000);
   };
 
   const open = Object.entries(errors).filter(([, m]) => m);
@@ -148,7 +166,8 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
           <AnimatePresence mode="wait" initial={false}>
             {sent ? (
               <motion.div key="sent" role="status" initial={{ opacity: 0, transform: "translateY(8px)" }} animate={{ opacity: 1, transform: "translateY(0px)" }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: EASE }}>
-                <p className="font-display text-[1.15rem] text-gold-ink italic">Almost there</p>
+                <CheckDraw reduce={reduce} />
+                <p className="font-display mt-6 text-[1.15rem] text-gold-ink italic">Almost there</p>
                 <p className="font-display mt-2 text-[clamp(1.8rem,3vw,2.4rem)] leading-tight">Your enquiry is written out in your email</p>
                 <p className="mt-4 max-w-[46ch] text-ink/75">
                   Your email app has opened with everything you entered, addressed to {agent.names}. Press send there and an agent will reply.
@@ -164,7 +183,7 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
                   </a>
                   .
                 </p>
-                <button type="button" onClick={() => setSent(false)} className="mt-8 rounded-full border border-ink/25 px-6 py-3 transition-colors duration-200 hover:bg-ink hover:text-paper">
+                <button type="button" onClick={() => (setSent(false), setDone(false))} className="mt-8 rounded-full border border-ink/25 px-6 py-3 transition-colors duration-200 hover:bg-ink hover:text-paper">
                   Back to the form
                 </button>
               </motion.div>
@@ -288,8 +307,12 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
                     onChange={set("consent")}
                     aria-invalid={!!errors.consent}
                     aria-describedby={errors.consent ? "consent-error" : undefined}
-                    className="mt-1 size-4 shrink-0 accent-ink"
+                    className="peer sr-only"
                   />
+                  {/* motionbook C1: the ring unwinds and the same stroke runs on into the tick */}
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="consent-tick -mt-px size-6 shrink-0 rounded-full text-ink/50 transition-colors duration-200 peer-checked:text-ink peer-focus-visible:outline peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-gold-ink peer-aria-invalid:text-burgundy">
+                    <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0L7 12.5l3 3l7-7" />
+                  </svg>
                   <span>
                     I agree that the agents named here may use these details to respond to my enquiry, in line with the Data Privacy Act of 2012 (Republic Act 10173) and the{" "}
                     <a href={`${siteUrl()}privacy/`} target="_blank" rel="noopener" className="underline underline-offset-4">
@@ -300,8 +323,28 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
                   </span>
                 </label>
 
-                <button type="submit" className="mt-8 w-full rounded-full bg-(--accent) px-6 py-4 text-paper transition-[background-color,transform] duration-200 hover:bg-ink active:scale-[0.98] motion-reduce:transform-none sm:w-auto">
-                  {button}
+                <button
+                  ref={submitBtn}
+                  type="submit"
+                  aria-disabled={done || undefined}
+                  className="relative mt-8 block w-full overflow-hidden rounded-full bg-(--accent) px-6 py-4 whitespace-nowrap text-paper transition-[background-color,transform] duration-200 hover:bg-ink active:scale-[0.98] motion-reduce:transform-none aria-disabled:hover:bg-(--accent) sm:w-auto"
+                >
+                  <motion.span className="block" animate={{ opacity: done ? 0 : 1 }} transition={{ duration: 0.16 }}>
+                    {button}
+                  </motion.span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className="absolute inset-0 m-auto size-6">
+                    <motion.path
+                      d="M5 12.5l4.5 4.5L19 7.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      initial={false}
+                      animate={done ? { pathLength: 1, opacity: 1, scale: [0, 1.2, 1] } : { pathLength: 0, opacity: 0, scale: 0 }}
+                      transition={{ delay: done ? 0.26 : 0, duration: 0.32, ease: EASE }}
+                    />
+                  </svg>
                 </button>
               </motion.form>
             )}
@@ -309,6 +352,20 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
         </div>
       </div>
     </section>
+  );
+}
+
+// motionbook D1, in the house colours: a ring draws itself round, fills with the site's accent,
+// and a paper check strokes in, ending on a small settle
+function CheckDraw({ reduce }) {
+  const IO = [0.65, 0, 0.35, 1];
+  const at = (from) => (reduce ? false : from);
+  return (
+    <motion.svg viewBox="0 0 56 56" aria-hidden="true" className="size-14" initial={at({ scale: 1 })} animate={{ scale: [1, 1.05, 1] }} transition={{ delay: 1.5, duration: 0.3 }}>
+      <motion.circle cx="28" cy="28" r="26" fill="none" stroke="var(--accent)" strokeWidth="1.5" transform="rotate(-90 28 28)" initial={at({ pathLength: 0 })} animate={{ pathLength: 1 }} transition={{ duration: 1.2, ease: IO }} />
+      <motion.circle cx="28" cy="28" r="26.75" fill="var(--accent)" initial={at({ opacity: 0 })} animate={{ opacity: 1 }} transition={{ delay: 1.1, duration: 0.24 }} />
+      <motion.path d="M18 28.5l7 7L38.5 21" fill="none" stroke="var(--color-paper)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" initial={at({ pathLength: 0 })} animate={{ pathLength: 1 }} transition={{ delay: 1.25, duration: 0.3, ease: EASE }} />
+    </motion.svg>
   );
 }
 

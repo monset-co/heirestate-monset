@@ -45,7 +45,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onPop = () => setOpen((o) => (fromHash() ? { id: fromHash(), origin: null } : null));
+    // an overlay inside the project (lightbox, tour) closing leaves the hash as it was: keep it open
+    const onPop = () => setOpen((o) => (!fromHash() ? null : o?.id === fromHash() ? o : { id: fromHash(), origin: null }));
     addEventListener("popstate", onPop);
     return () => removeEventListener("popstate", onPop);
   }, []);

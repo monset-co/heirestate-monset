@@ -58,7 +58,7 @@ export default function ProjectView({ id, origin, onClose, onGo }) {
       role="dialog"
       aria-modal="true"
       aria-label={projects[id].name}
-      className="fixed inset-0 z-30 overflow-y-auto overscroll-contain bg-paper"
+      className="fixed inset-0 z-30 overflow-y-auto overscroll-contain bg-paper pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]"
       initial={clip ? { clipPath: insetOf(origin) } : { opacity: 0 }}
       animate={clip ? { clipPath: FULL } : { opacity: 1 }}
       exit={clip ? { clipPath: insetOf(origin), transition: { duration: 0.7, ease: EASE_IO } } : { opacity: 0, transition: { duration: 0.4 } }}
@@ -431,7 +431,7 @@ function BookBar({ onBook, phone, hidden }) {
   return (
     <div
       inert={!on}
-      className={`fixed inset-x-3 bottom-3 z-30 flex gap-2 transition-[opacity,transform] duration-300 ease-(--ease-out-strong) motion-reduce:transition-opacity sm:inset-x-auto sm:right-6 sm:bottom-6 ${
+      className={`fixed inset-x-[max(12px,env(safe-area-inset-left))] bottom-[max(12px,env(safe-area-inset-bottom))] z-30 flex gap-2 transition-[opacity,transform] duration-300 ease-(--ease-out-strong) motion-reduce:transition-opacity sm:inset-x-auto sm:right-[max(24px,env(safe-area-inset-right))] sm:bottom-[max(24px,env(safe-area-inset-bottom))] ${
         on ? "" : "translate-y-4 opacity-0"
       }`}
     >

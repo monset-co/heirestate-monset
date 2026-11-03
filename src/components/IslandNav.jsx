@@ -38,7 +38,7 @@ export default function IslandNav({ section, onOpen, hidden }) {
 
   return (
     <motion.header
-      className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-center px-3 pt-3 sm:pt-4"
+      className="pointer-events-none fixed inset-x-0 top-0 z-40 flex justify-center px-3 pt-[max(12px,env(safe-area-inset-top))] sm:pt-[max(16px,env(safe-area-inset-top))]"
       initial={{ opacity: 0, transform: "translateY(-12px)" }}
       animate={hidden ? { opacity: 0, transform: "translateY(-12px)" } : { opacity: 1, transform: "translateY(0px)" }}
       transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}

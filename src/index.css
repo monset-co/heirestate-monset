@@ -70,6 +70,21 @@ html {
   overflow-x: clip;
   -webkit-font-smoothing: antialiased;
   scrollbar-color: var(--color-gold) var(--color-stone);
+  /* viewport-fit=cover: full-screen overlays run under a phone's notch; the page keeps clear of it */
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+}
+
+/* no headline ends on a lone word; paragraphs avoid a one-word last line (in the base layer, so
+   a utility such as whitespace-nowrap still wins) */
+@layer base {
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
 }
 
 /* fine paper grain over everything, so flat colour reads as a material, not a screen */
@@ -265,6 +280,30 @@ body::after {
 @media (prefers-reduced-motion: reduce) {
   .draw {
     stroke-dashoffset: 0 !important;
+    transition: none;
+  }
+}
+
+/* the consent box (Enquiry.jsx, motionbook C1): one path, a ring then a tick; the dash shows the
+   ring (56.5 long) unchecked and slides along the path onto the tick (14.1, starting at 60.6) */
+.consent-tick path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 56.55 200;
+  stroke-dashoffset: 0;
+  transition:
+    stroke-dasharray 480ms var(--ease-out-strong),
+    stroke-dashoffset 480ms var(--ease-out-strong);
+}
+.peer:checked + .consent-tick path {
+  stroke-dasharray: 14.14 200;
+  stroke-dashoffset: -60.58;
+}
+@media (prefers-reduced-motion: reduce) {
+  .consent-tick path {
     transition: none;
   }
 }

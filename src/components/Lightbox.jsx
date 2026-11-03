@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
+import { useBackCloses } from "@/lib/back";
 
 const EASE = [0.23, 1, 0.32, 1];
 const OPEN = { type: "spring", duration: 0.5, bounce: 0.1 };
@@ -76,6 +77,7 @@ function Viewer({ images, index, rect, x, y, scale, clip, alpha, fade, settled, 
   const hasNext = index < images.length - 1;
 
   useEffect(() => closeRef.current?.focus({ preventScroll: true }), []);
+  useBackCloses(() => onClose());
 
   const down = (e) => {
     if (!settled || e.button !== 0) return;
@@ -159,7 +161,7 @@ function Viewer({ images, index, rect, x, y, scale, clip, alpha, fade, settled, 
       </motion.div>
 
       <motion.div className="pointer-events-none absolute inset-0" style={{ opacity: fade }}>
-        <div className="pointer-events-auto absolute top-3 right-3 flex items-center gap-4 sm:top-5 sm:right-5">
+        <div className="pointer-events-auto absolute top-[max(12px,env(safe-area-inset-top))] right-[max(12px,env(safe-area-inset-right))] flex items-center gap-4 sm:top-[max(20px,env(safe-area-inset-top))] sm:right-[max(20px,env(safe-area-inset-right))]">
           <span className="font-inscription text-[0.72rem] tracking-[0.24em] text-champagne/80 tabular-nums">
             {index + 1} / {images.length}
           </span>
@@ -169,10 +171,10 @@ function Viewer({ images, index, rect, x, y, scale, clip, alpha, fade, settled, 
             </svg>
           </IconButton>
         </div>
-        <IconButton className="pointer-events-auto absolute top-1/2 left-5 hidden -translate-y-1/2 sm:grid" label="Previous photo" onClick={() => hasPrev && onStep(-1)} unavailable={!hasPrev}>
+        <IconButton className="pointer-events-auto absolute top-1/2 left-[max(20px,env(safe-area-inset-left))] hidden -translate-y-1/2 sm:grid" label="Previous photo" onClick={() => hasPrev && onStep(-1)} unavailable={!hasPrev}>
           <Chevron flip />
         </IconButton>
-        <IconButton className="pointer-events-auto absolute top-1/2 right-5 hidden -translate-y-1/2 sm:grid" label="Next photo" onClick={() => hasNext && onStep(1)} unavailable={!hasNext}>
+        <IconButton className="pointer-events-auto absolute top-1/2 right-[max(20px,env(safe-area-inset-right))] hidden -translate-y-1/2 sm:grid" label="Next photo" onClick={() => hasNext && onStep(1)} unavailable={!hasNext}>
           <Chevron />
         </IconButton>
         {image.caption && (
