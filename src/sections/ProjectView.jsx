@@ -358,6 +358,10 @@ function Project({ id, onClose, onGo, opened, heading: Title = "h2" }) {
         <a href={siteUrl()} onClick={onClose ? inPlace(onClose) : toCollection} className="font-inscription text-[0.78rem] tracking-[0.3em] text-ink/75 uppercase hover:text-gold-ink">
           Back to the facade
         </a>
+        {/* its units for sale, drawn from the admin (src/listings) */}
+        <a href={`${siteUrl(id)}listings`} className="font-inscription text-[0.78rem] tracking-[0.3em] text-ink/75 uppercase hover:text-gold-ink">
+          Units for sale
+        </a>
         <Mark className="h-8 w-auto text-ink/70" />
       </footer>
     </>

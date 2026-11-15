@@ -83,3 +83,59 @@ The project id stays `pristina` (it is in every address); the site leads with No
 
 From `resources/pristina town/`: `grove-intro.mp4` is the town film's first 6.3 s; the floor plates (`grove-lumina-*`, `grove-terra-*`) and unit sheets (`grove-sheet-*`) are the developer's own sheets as webp, the unit photographs cropped from the sheets (`crop=630:542:0:0`). The payment terms are the shape of the sample term sheet's scheme, without its figures.
 
+
+## Admin (admin.heirestates.com)
+
+A private, installable app for leads, listings and the commission log. The app is `admin/`. Cloudflare serves it (`wrangler.admin.jsonc`), and it talks to **Supabase** directly as the signed-in user: Postgres for the data, Supabase Auth for passwords, Supabase Storage for listing photos. A small Worker beside it (`admin/worker/`) does only what needs a secret. Its look and motion follow the Monset dashboard: the rail, tab bar and More sheet, the sliding tabs, rows that stagger in, and toasts.
+
+**What it has**
+
+- **Dashboard:** new inquiries, open deals, sales this year and follow-ups due; visits per site for the last 7, 30 or 90 days (Cloudflare Web Analytics); deals by stage; the latest inquiries.
+- **Leads:** every inquiry from the six sites, emailed to its agent the moment it arrives. Each lead has tabs: Overview (contact details, stage, agent, lost reason), Notes, Reminders (emailed when due) and Activity. **Delete on request** removes the lead with its notes, reminders and history, leaving one line saying who deleted lead #n and when (Data Privacy Act).
+- **Listings:** add, edit, photos, publishing (see below).
+- **Commissions:** each sale (date of sale, project or listing, unit code, payment mode, whether it came through the sites), each release of commission on it (paid on, gross, full or partial), and cancellations. **Monthly report** prints, or downloads as CSV, the contract's Annex B for any month, with no buyer details. No fees are worked out: the "Sale no. in Season" and "Fee due" columns are left blank to fill in.
+- **Users** and **Settings**: the licensed broker (shown on every listing page), the default agent and the contract date, plus **Export all data** (listings, leads, commission log as CSV).
+
+**Signing in takes two steps:** a password, then a six-digit code emailed to the user. That's the contract's "multifactor sign-in" (section 11.3.3). The database lets a session see nothing until it has passed both (`is_admin()` in `supabase/migrations/`). A new user gets an invitation email to set their password. "Forgot your password" sends a reset link.
+
+**Rules the database keeps**, whatever sends the change:
+
+- Row-level security: only signed-in admins who have passed both steps can read or change anything. The public key can read no table.
+- The public sites read published listings only, through `public_listings()` and `public_listing()`. Photos sit in a private bucket that lets the public read a photo only while its listing is public.
+- A listing can't be published without its License to Sell (project and RFO units), the owner's authority on file (resale, rental, lot), and the broker's details. Its address is fixed once published.
+- A new lead goes to its listing's agent, otherwise to the default agent. "Lost" needs a reason.
+- The activity log records every insert, change and delete, and nobody can edit it.
+
+**Inquiries.** The enquiry form on every site posts to `/api/inquiries` on the public Worker (`src/listings/inquiry.js`). It checks the request comes from the site itself, allows five a minute per address, checks Cloudflare Turnstile and every field, then hands the lead to the admin Worker through a service binding. The admin Worker saves it and emails the agent through Resend. The public Worker holds no database key. Until `VITE_TURNSTILE_SITE_KEY` is set, the form opens the visitor's mail app instead, as before. A link from a listing page (`?listing=<slug>`) ties the inquiry to that listing.
+
+```
+npm run dev:admin            # the admin on http://localhost:5190, its Worker on 8787 (.env and .dev.vars)
+npm test                     # listing rules, inquiry checks, the sign-in code, CSV, Annex B, and every migration in PGlite
+npm run build:admin          # dist/admin, with its service worker
+npm run deploy:admin         # build and deploy to admin.heirestates.com (deploy this before the public sites)
+```
+
+**Setup, once:**
+
+1. **Supabase.** Create the project in the client's organization (region: Singapore). Run the files in `supabase/migrations/` in order: in the SQL editor, or with `npx supabase link` then `npx supabase db push`.
+2. **Supabase Auth.**
+   - Providers > Email: turn email confirmation on, and set the minimum password length to 10.
+   - Turn off "Allow new users to sign up". Invitations still work.
+   - Hooks: add **Before User Created**, type Postgres, function `public.before_user_created`.
+   - URL Configuration: Site URL `https://admin.heirestates.com`.
+   - Emails: custom SMTP through Resend.
+   - Users > **Invite user** for the first admin, heirestates.fh@gmail.com. After that, add people from the admin's Users page.
+3. **Resend.** Verify heirestates.com (DNS records in Cloudflare). The sender is `MAIL_FROM` in `wrangler.admin.jsonc`.
+4. **The admin's settings.**
+   - In `wrangler.admin.jsonc`'s vars: `SUPABASE_URL` and `CF_ACCOUNT_ID`.
+   - Secrets: `npx wrangler secret put SUPABASE_SECRET_KEY -c wrangler.admin.jsonc`, then the same for `RESEND_API_KEY`, and `CF_API_TOKEN` (an API token with Account Analytics: Read only).
+   - In `.env` (from `.env.example`): `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+5. **The public sites.**
+   - In `wrangler.jsonc`'s vars: `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY`.
+   - Create a Turnstile widget for heirestates.com and its subdomains. Set `VITE_TURNSTILE_SITE_KEY` in `.env`, then `npx wrangler secret put TURNSTILE_SECRET`.
+   - Turn on Cloudflare Web Analytics for heirestates.com, and set its token as `CF_BEACON_TOKEN` when building.
+6. **Deploy.** Run `npm run deploy:admin` first: the public sites bind to its Worker, so their deploy fails until it exists. Then deploy the sites as usual. To deploy the admin on every push, connect the repo a second time in Workers & Pages, with the build command `npm run build:admin` and the deploy command `npx wrangler deploy -c wrangler.admin.jsonc`. Set the `VITE_` variables in that build's settings.
+
+**Adding an admin user:** add them on the Users page, and an invitation goes to their email. **Switching someone off** locks them out at once.
+
+**Schema changes:** a new timestamped file in `supabase/migrations/`. `npm test` runs it in PGlite with the others; then apply it to the project.

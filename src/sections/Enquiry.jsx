@@ -22,9 +22,59 @@ const CHECKS = {
 };
 const LABELS = { name: "Full name", phone: "Mobile number", email: "Email", consent: "Consent" };
 
-// ponytail: opens the visitor's mail app with the enquiry written out, addressed to the agents.
-// Swap for a POST to /api/enquiry (Resend) once it exists; the form and its states stay as they are.
-function send(f, { agent, name, units, pick }) {
+// what the visitor expects to spend (optional); ponytail: placeholder bands until the client confirms theirs
+export const BUDGETS = ["Below ₱3M", "₱3M to ₱5M", "₱5M to ₱8M", "Above ₱8M"];
+
+// Inquiries go to the admin's CRM (POST /api/inquiries, src/listings/inquiry.js) once the site has a
+// Turnstile key; until then, and whenever the server can't take one, the visitor's mail app opens
+// with the enquiry written out instead.
+const TURNSTILE = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+const fromListing = () => (typeof location === "undefined" ? null : new URLSearchParams(location.search).get("listing"));
+
+async function post(f, { units, token }) {
+  const unit = units.find((u) => u.id === f.unit)?.name ?? "";
+  const r = await fetch("/api/inquiries", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...f, unit, token, listing: fromListing() }),
+  });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "The form couldn't be sent");
+}
+
+// Cloudflare Turnstile, the check that the visitor isn't a bot: mostly invisible, a click at most
+function useTurnstile(box) {
+  const [token, setToken] = useState("");
+  const widget = useRef(null);
+  useEffect(() => {
+    if (!TURNSTILE || !box.current) return;
+    const render = () => {
+      widget.current = window.turnstile.render(box.current, {
+        sitekey: TURNSTILE,
+        appearance: "interaction-only",
+        callback: setToken,
+        "expired-callback": () => setToken(""),
+      });
+    };
+    const loaded = document.querySelector("script[data-turnstile]");
+    if (window.turnstile) render();
+    else if (loaded) loaded.addEventListener("load", render);
+    else {
+      const s = Object.assign(document.createElement("script"), { src: "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit", async: true });
+      s.dataset.turnstile = "";
+      s.onload = render;
+      document.head.append(s);
+    }
+    return () => widget.current != null && window.turnstile?.remove(widget.current);
+  }, []);
+  // a token works once: after a send, get a fresh one
+  const reset = () => {
+    setToken("");
+    if (widget.current != null) window.turnstile?.reset(widget.current);
+  };
+  return [token, reset];
+}
+
+function mailto(f, { agent, name, units, pick }) {
   const unit = units.find((u) => u.id === f.unit)?.name ?? "Not decided yet";
   const intent = INTENTS.find(([k]) => k === f.intent)[1];
   const body = [
@@ -35,6 +85,7 @@ function send(f, { agent, name, units, pick }) {
     `Name: ${f.name.trim()}`,
     `Mobile: ${f.phone.trim()}`,
     `Email: ${f.email.trim()}`,
+    f.budget ? `Budget: ${f.budget}` : "",
     f.message.trim() ? `\n${f.message.trim()}` : "",
     "",
     "I agree to my details being used to respond to this enquiry, in line with the Data Privacy Act of 2012.",
@@ -50,7 +101,11 @@ function send(f, { agent, name, units, pick }) {
 // units are the choices in the second field and pick its name: a project's unit types on its own
 // site, the projects themselves on the collection.
 export default function Enquiry({ agent, name, units = [], pick = "Unit type", developer, ask, motif }) {
-  const [f, setF] = useState({ intent: "viewing", unit: "", date: "", name: "", phone: "", email: "", message: "", consent: false });
+  const [f, setF] = useState({ intent: "viewing", unit: "", date: "", budget: "", name: "", phone: "", email: "", message: "", consent: false });
+  const [failed, setFailed] = useState(""); // the server couldn't take it: say so, and offer the mail app
+  const [mailed, setMailed] = useState(!TURNSTILE); // how it went: through the mail app, or to the CRM
+  const human = useRef(null);
+  const [token, resetToken] = useTurnstile(human);
   const [errors, setErrors] = useState({});
   const [sent, setSent] = useState(false);
   const [done, setDone] = useState(false); // the button has turned into its tick (motionbook B5)
@@ -79,21 +134,33 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
   };
   const leave = (k) => () => CHECKS[k] && setErrors((s) => ({ ...s, [k]: CHECKS[k](f[k]) }));
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     const found = Object.fromEntries(Object.entries(CHECKS).map(([k, c]) => [k, c(f[k])]));
     setErrors(found);
     if (Object.values(found).some(Boolean)) return requestAnimationFrame(() => summary.current?.focus());
     if (done) return;
-    send(f, { agent, name, units, pick });
-    if (reduce) return setSent(true);
-    // B5: the pill draws in to a circle, its tick pops, then the panel turns to the next step.
-    // ponytail: no spinner, mailto has nothing to wait for; show one while the POST is in flight
-    // once /api/enquiry exists
+    setFailed("");
     const b = submitBtn.current;
+    // B5: the pill draws in to a circle while it sends, its tick pops, then the panel turns
     setDone(true);
-    animate(b, { width: [b.offsetWidth, b.offsetHeight], paddingLeft: 0, paddingRight: 0 }, { duration: 0.28, ease: EASE });
-    turn.current = setTimeout(() => setSent(true), 1000);
+    if (!reduce) animate(b, { width: [b.offsetWidth, b.offsetHeight], paddingLeft: 0, paddingRight: 0 }, { duration: 0.28, ease: EASE });
+    const started = Date.now();
+    if (TURNSTILE) {
+      try {
+        await post(f, { units, token });
+        setMailed(false);
+      } catch (err) {
+        // back to the button, with the reason and a way round it
+        resetToken();
+        setDone(false);
+        b.style.removeProperty("width"), b.style.removeProperty("padding-left"), b.style.removeProperty("padding-right");
+        return setFailed(err.message);
+      }
+    } else mailto(f, { agent, name, units, pick });
+    resetToken();
+    if (reduce) return setSent(true);
+    turn.current = setTimeout(() => setSent(true), Math.max(0, 1000 - (Date.now() - started)));
   };
 
   const open = Object.entries(errors).filter(([, m]) => m);
@@ -167,13 +234,23 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
             {sent ? (
               <motion.div key="sent" role="status" initial={{ opacity: 0, transform: "translateY(8px)" }} animate={{ opacity: 1, transform: "translateY(0px)" }} exit={{ opacity: 0 }} transition={{ duration: 0.3, ease: EASE }}>
                 <CheckDraw reduce={reduce} />
-                <p className="font-display mt-6 text-[1.15rem] text-gold-ink italic">Almost there</p>
-                <p className="font-display mt-2 text-[clamp(1.8rem,3vw,2.4rem)] leading-tight">Your enquiry is written out in your email</p>
+                {mailed ? (
+                  <>
+                    <p className="font-display mt-6 text-[1.15rem] text-gold-ink italic">Almost there</p>
+                    <p className="font-display mt-2 text-[clamp(1.8rem,3vw,2.4rem)] leading-tight">Your enquiry is written out in your email</p>
+                    <p className="mt-4 max-w-[46ch] text-ink/75">
+                      Your email app has opened with everything you entered, addressed to {agent.names}. Press send there and an agent will reply.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-display mt-6 text-[1.15rem] text-gold-ink italic">Thank you</p>
+                    <p className="font-display mt-2 text-[clamp(1.8rem,3vw,2.4rem)] leading-tight">Your enquiry is with {agent.names}</p>
+                    <p className="mt-4 max-w-[46ch] text-ink/75">An agent will reply by text, call or email, usually within the day.</p>
+                  </>
+                )}
                 <p className="mt-4 max-w-[46ch] text-ink/75">
-                  Your email app has opened with everything you entered, addressed to {agent.names}. Press send there and an agent will reply.
-                </p>
-                <p className="mt-4 max-w-[46ch] text-ink/75">
-                  Nothing opened? Email{" "}
+                  {mailed ? "Nothing opened?" : "In a hurry?"} Email{" "}
                   <a href={`mailto:${agent.email}`} className="underline underline-offset-4">
                     {agent.email}
                   </a>{" "}
@@ -240,6 +317,17 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
                       <input type="date" name="date" min={today} value={f.date} onChange={set("date")} className={`${field} border-ink/20`} />
                     </label>
                   )}
+                  <label className="block">
+                    <span>
+                      Budget <span className="text-ink/55">(optional)</span>
+                    </span>
+                    <select name="budget" value={f.budget} onChange={set("budget")} className={`${field} border-ink/20`}>
+                      <option value="">Prefer not to say</option>
+                      {BUDGETS.map((b) => (
+                        <option key={b}>{b}</option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="block sm:col-span-2">
                     <span>Full name</span>
                     <input
@@ -323,6 +411,16 @@ export default function Enquiry({ agent, name, units = [], pick = "Unit type", d
                   </span>
                 </label>
 
+                {/* Turnstile shows itself here only if it needs the visitor to click */}
+                <div ref={human} className="mt-6 empty:hidden" />
+                {failed && (
+                  <p role="alert" className="mt-6 border-l-2 border-burgundy bg-burgundy/5 px-5 py-4 text-[0.95rem]">
+                    {failed}{" "}
+                    <button type="button" onClick={() => (mailto(f, { agent, name, units, pick }), setMailed(true), setSent(true))} className="text-burgundy underline underline-offset-4">
+                      Send it from your email app instead
+                    </button>
+                  </p>
+                )}
                 <button
                   ref={submitBtn}
                   type="submit"

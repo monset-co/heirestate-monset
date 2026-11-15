@@ -7,8 +7,17 @@
     "binding": "ASSETS",
     // the paths worker.js answers: each host's front door, and every project's path (one entry per
     // project, which build.js checks), so a project is only ever served from its own subdomain
-    "run_worker_first": ["/", "/robots.txt", "/sitemap.xml", "/alto/*", "/wave/*", "/pristina/*"],
+    "run_worker_first": ["/", "/robots.txt", "/sitemap.xml", "/listings", "/listings/*", "/photos/*", "/api/*", "/alto/*", "/wave/*", "/pristina/*"],
     // an address that is not there gets the house's 404 page (public/404.html), with a real 404
     "not_found_handling": "404-page"
-  }
+  },
+  // the listings come from Supabase (src/listings/serve.js); this key is the public one, which can
+  // only read published listings and their photos. Empty: /listings answers 404 and the sitemaps
+  // stay as built.
+  "vars": { "SUPABASE_URL": "https://rqspfymfujfimljgilid.supabase.co", "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_UZLXN7SPtreNz2-ZVzoijA_px4mvXhN" },
+  // Inquiries (src/listings/inquiry.js): checked here (Turnstile, five a minute per address), then
+  // saved by the admin's Worker, which must be deployed first. The Turnstile secret is a secret:
+  // npx wrangler secret put TURNSTILE_SECRET
+  "services": [{ "binding": "ADMIN", "service": "heirestates-admin", "entrypoint": "PublicApi" }],
+  "ratelimits": [{ "name": "INQUIRY_LIMIT", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }]
 }

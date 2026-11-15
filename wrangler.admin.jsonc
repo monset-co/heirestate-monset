@@ -1,0 +1,34 @@
+// The private admin at admin.heirestates.com: listings, CRM, dashboard and commission log. A static
+// app (dist/admin) that talks to Supabase directly as the signed-in user, where row-level security
+// guards the data (supabase/migrations), plus a small Worker for what needs a secret
+// (admin/worker). Deployed with `npm run deploy:admin`, before the public sites, which call it
+// for inquiries (wrangler.jsonc's ADMIN binding).
+//
+// Secrets, once each:  npx wrangler secret put SUPABASE_SECRET_KEY -c wrangler.admin.jsonc
+//                      npx wrangler secret put RESEND_API_KEY -c wrangler.admin.jsonc
+//                      npx wrangler secret put CF_API_TOKEN -c wrangler.admin.jsonc
+{
+  "name": "heirestates-admin",
+  "compatibility_date": "2026-10-01",
+  "main": "admin/worker/index.js",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "admin.heirestates.com", "custom_domain": true }],
+  "assets": {
+    "directory": "dist/admin",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"],
+    "not_found_handling": "single-page-application"
+  },
+  // reminders that have come due are emailed within 15 minutes
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "vars": {
+    "SUPABASE_URL": "https://rqspfymfujfimljgilid.supabase.co",
+    "DOMAIN": "heirestates.com",
+    "ADMIN_URL": "https://admin.heirestates.com",
+    // a verified sender on heirestates.com in Resend
+    "MAIL_FROM": "Heir Estates <no-reply@heirestates.com>",
+    // Cloudflare dashboard > the account's overview (right-hand column)
+    "CF_ACCOUNT_ID": "3c6f10a996d25fa8c2e7d4408d26439c"
+  }
+}

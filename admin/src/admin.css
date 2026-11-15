@@ -1,0 +1,221 @@
+@import "tailwindcss" source("../src");
+
+/* The house palette and type (src/index.css), laid onto the roles the Monset dashboard's components
+   use (bg, surface, sunken, line, fg, muted, accent, side), so its patterns carry over as they are. */
+@theme {
+  --color-navy: #14213a;
+  --color-navy-raised: #1d2e4c;
+  --color-navy-deep: #0c1526;
+  --color-charcoal: #30373e;
+  --color-burgundy: #7a2038;
+  --color-gold: #c49b4c;
+  --color-champagne: #e2d2b4;
+  --color-paper: #f6f1e8;
+  --color-stone: #ece3d3;
+  --color-ink: #14213a;
+  --color-gold-ink: #7d5d22;
+
+  --color-cream: #f6f1e8;
+  --color-bg: #f6f1e8;
+  --color-surface: #fffdf9;
+  --color-sunken: #ece3d3;
+  --color-line: rgb(20 33 58 / 0.12);
+  --color-fg: #14213a;
+  --color-muted: #5b6168;
+  --color-accent: #c49b4c;
+  --color-accent-ink: #7d5d22;
+  --color-danger: #7a2038;
+  --color-side: #14213a;
+  --color-side-2: #1d2e4c;
+
+  --font-display: "Bodoni Moda Variable", "Bodoni 72", Didot, serif;
+  --font-inscription: "Marcellus", "Trajan Pro", serif;
+  --font-body: "Hanken Grotesk Variable", system-ui, sans-serif;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@layer base {
+  html {
+    background: var(--color-bg);
+    color: var(--color-charcoal);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    scrollbar-color: var(--color-gold) var(--color-stone);
+  }
+  body {
+    background: var(--color-bg);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-champagne);
+    color: var(--color-ink);
+  }
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* Marcellus capitals for labels that sit above data (the dashboard's .map-label, in the house's hand) */
+  .label {
+    font-family: var(--font-inscription);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.6875rem;
+    line-height: 1.3;
+  }
+
+  /* Pressables answer the press: 0.97, 160ms ease-out */
+  .press {
+    transition:
+      transform 160ms var(--ease-out),
+      background-color 150ms ease,
+      border-color 150ms ease,
+      color 150ms ease;
+  }
+  .press:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* Native <dialog>: rises from 97% on open, leaves faster than it came */
+  dialog.modal {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+    transition:
+      opacity 140ms ease,
+      transform 140ms var(--ease-out),
+      overlay 140ms allow-discrete,
+      display 140ms allow-discrete;
+  }
+  dialog.modal[open] {
+    opacity: 1;
+    transform: none;
+    transition-duration: 220ms;
+    @starting-style {
+      opacity: 0;
+      transform: translateY(6px) scale(0.97);
+    }
+  }
+  dialog.modal::backdrop,
+  dialog.sheet::backdrop {
+    background: rgb(12 21 38 / 0);
+    transition:
+      background-color 180ms ease,
+      overlay 180ms allow-discrete,
+      display 180ms allow-discrete;
+  }
+  dialog.modal[open]::backdrop,
+  dialog.sheet[open]::backdrop {
+    background: rgb(12 21 38 / 0.55);
+    @starting-style {
+      background: rgb(12 21 38 / 0);
+    }
+  }
+
+  /* Skeletons shaped like the rows they stand in for */
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-sunken) 25%, color-mix(in oklab, var(--color-sunken), var(--color-surface) 70%) 37%, var(--color-sunken) 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease infinite;
+  }
+
+  /* Each page rises in on navigation (keyed by path in Shell): its top-level blocks cascade,
+     50ms apart, and so do the children of any .stagger container */
+  .page-in > :not(dialog),
+  .stagger > :not(dialog) {
+    animation: page-in 380ms var(--ease-out) backwards;
+  }
+  .page-in > :nth-child(2),
+  .stagger > :nth-child(2) {
+    animation-delay: 50ms;
+  }
+  .page-in > :nth-child(3),
+  .stagger > :nth-child(3) {
+    animation-delay: 100ms;
+  }
+  .page-in > :nth-child(4),
+  .stagger > :nth-child(4) {
+    animation-delay: 150ms;
+  }
+  .page-in > :nth-child(n + 5),
+  .stagger > :nth-child(n + 5) {
+    animation-delay: 200ms;
+  }
+
+  /* iOS-style: the page eases back behind the open More sheet */
+  .app-page {
+    transition:
+      transform 320ms var(--ease-out),
+      border-radius 320ms var(--ease-out),
+      filter 320ms ease;
+  }
+  [data-sheet="open"] .app-page {
+    transform: scale(0.94) translateY(8px);
+    border-radius: 1.25rem;
+    filter: brightness(0.85);
+    overflow: hidden;
+  }
+
+  /* Bottom sheet on phones: the native <dialog>, docked to the bottom */
+  dialog.sheet {
+    margin: auto 0 0;
+    width: 100%;
+    max-width: 100%;
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateY(100%);
+    transition:
+      transform 220ms var(--ease-out),
+      overlay 220ms allow-discrete,
+      display 220ms allow-discrete;
+  }
+  dialog.sheet[open] {
+    transform: none;
+    transition-duration: 320ms;
+    @starting-style {
+      transform: translateY(100%);
+    }
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+  .page-in > :not(dialog),
+  .stagger > :not(dialog) {
+    animation-name: fade-in;
+  }
+  .app-page,
+  [data-sheet="open"] .app-page,
+  dialog.sheet,
+  dialog.sheet[open],
+  dialog.modal,
+  dialog.modal[open],
+  .press:active:not(:disabled) {
+    transform: none;
+  }
+}

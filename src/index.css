@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source not "../admin";
 
 @theme {
   /* client palette, plus Heir Navy */

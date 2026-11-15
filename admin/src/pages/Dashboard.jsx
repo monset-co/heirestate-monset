@@ -1,0 +1,222 @@
+import { ArrowRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
+import { supabase, run } from "../supabase";
+import { api } from "../api";
+import { useMe } from "../me";
+import { CountUp, Live, LiveLi, Skeleton, SkeletonRows } from "../motion";
+import { Badge, Empty, ErrorNote, Tabs, card } from "../ui";
+import { OPEN, SITES, STAGES, ago, when } from "../crm";
+
+const manila = (opts) => new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", ...opts });
+
+export default function Dashboard() {
+  const me = useMe();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const hour = Number(manila({ hour: "numeric", hourCycle: "h23" }).format(new Date()));
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+  useEffect(() => {
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    Promise.all([
+      run(supabase.from("leads").select("id, name, stage, interest, source_site, created_at").order("created_at", { ascending: false })),
+      run(supabase.from("commissions").select("sale_date, project, listing_id, unit_code, cancelled")),
+      run(supabase.from("reminders").select("id, body, due_at, lead_id, lead:leads(name)").is("done_at", null).lte("due_at", endOfToday.toISOString()).order("due_at")),
+    ]).then(([leads, commissions, reminders]) => setData({ leads, commissions, reminders }), (e) => setError(e.message));
+  }, []);
+
+  const week = Date.now() - 7 * 864e5;
+  const year = String(new Date().getFullYear());
+  const stats = data && [
+    ["New inquiries · 7 days", data.leads.filter((l) => Date.parse(l.created_at) >= week).length, "/leads?stage=all"],
+    ["Open deals", data.leads.filter((l) => OPEN.includes(l.stage)).length, "/leads"],
+    [`Sales in ${year}`, new Set(data.commissions.filter((c) => !c.cancelled && c.sale_date.startsWith(year)).map((c) => `${c.project ?? c.listing_id}:${c.unit_code}`)).size, "/commissions"],
+    ["Follow-ups due", data.reminders.length, "/leads"],
+  ];
+
+  return (
+    <>
+      <div>
+        <h1 className="font-display text-[2.1rem] leading-tight tracking-[-0.01em] text-ink">
+          {greeting}, {me.name.split(/[ &]/)[0]}
+        </h1>
+        <p className="mt-1 text-muted">{manila({ weekday: "long", month: "long", day: "numeric" }).format(new Date())}</p>
+      </div>
+      <div className="mt-4">
+        <ErrorNote error={error} />
+      </div>
+
+      {/* the 1px gaps show the line colour behind: dividers that hold at any column count */}
+      <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line shadow-[0_1px_2px_rgb(20_33_58/0.04),0_6px_20px_-12px_rgb(20_33_58/0.14)] lg:grid-cols-4">
+        {(stats ?? [0, 1, 2, 3].map((i) => [i])).map(([label, value, to], i) => (
+          <div key={i} className="bg-surface p-5">
+            <dt className="label text-muted">{label ?? <Skeleton className="h-3 w-24" />}</dt>
+            <dd className="mt-2">
+              {to ? (
+                <Link to={to} className="font-display text-[2.4rem] leading-none text-ink hover:text-accent-ink">
+                  <CountUp value={value} />
+                </Link>
+              ) : (
+                <Skeleton className="h-10 w-16" />
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <div className="stagger grid content-start gap-8">
+          <Visits />
+          <Pipeline leads={data?.leads} />
+        </div>
+        <div className="stagger grid content-start gap-8">
+          <Section title="Follow-ups due" to="/leads" linkLabel="All leads">
+            <div className={card}>
+              {!data ? (
+                <SkeletonRows n={2} />
+              ) : !data.reminders.length ? (
+                <Empty>Nothing due today. All caught up.</Empty>
+              ) : (
+                <ul className="divide-y divide-line">
+                  <Live>
+                    {data.reminders.map((r, i) => (
+                      <LiveLi key={r.id} i={i}>
+                        <Link to={`/leads/${r.lead_id}?tab=Reminders`} className="block px-4 py-3 text-sm transition-colors hover:bg-bg">
+                          <span className="font-medium text-fg">{r.body}</span>
+                          <span className={`block text-xs ${Date.parse(r.due_at) < Date.now() ? "text-danger" : "text-muted"}`}>
+                            {r.lead?.name} · {when(r.due_at)}
+                          </span>
+                        </Link>
+                      </LiveLi>
+                    ))}
+                  </Live>
+                </ul>
+              )}
+            </div>
+          </Section>
+          <Section title="Latest inquiries" to="/leads?stage=all" linkLabel="All leads">
+            <div className={card}>
+              {!data ? (
+                <SkeletonRows />
+              ) : !data.leads.length ? (
+                <Empty>No inquiries yet.</Empty>
+              ) : (
+                <ul className="divide-y divide-line">
+                  <Live>
+                    {data.leads.slice(0, 6).map((l, i) => (
+                      <LiveLi key={l.id} i={i}>
+                        <Link to={`/leads/${l.id}`} className="flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-bg">
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium text-fg">{l.name}</span>
+                            <span className="block truncate text-xs text-muted">
+                              {l.interest} · {SITES[l.source_site] ?? l.source_site}
+                            </span>
+                          </span>
+                          <span className="text-xs whitespace-nowrap text-muted">{ago(l.created_at)}</span>
+                          <Badge value={l.stage}>{STAGES[l.stage]}</Badge>
+                        </Link>
+                      </LiveLi>
+                    ))}
+                  </Live>
+                </ul>
+              )}
+            </div>
+          </Section>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Section({ title, to, linkLabel, children, aside }) {
+  return (
+    <section>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <h2 className="font-display text-xl text-ink">{title}</h2>
+        {aside}
+        {to && (
+          <Link to={to} className="ml-auto inline-flex items-center gap-1 text-sm text-muted hover:text-fg">
+            {linkLabel} <ArrowRight className="size-3.5" aria-hidden />
+          </Link>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// Visits per site from Cloudflare Web Analytics, through the admin's Worker
+function Visits() {
+  const [days, setDays] = useState("30");
+  const [res, setRes] = useState({});
+  useEffect(() => {
+    if (res[days]) return;
+    api(`visits?days=${days}`).then(
+      (r) => setRes((s) => ({ ...s, [days]: { sites: r.sites } })),
+      (e) => setRes((s) => ({ ...s, [days]: { error: e.message } }))
+    );
+  }, [days]);
+  const now = res[days];
+  const top = Math.max(1, ...(now?.sites ?? []).map((s) => s.visits));
+  const name = (host) => SITES[host.split(".")[0]] ?? host;
+
+  return (
+    <Section
+      title="Site visits"
+      aside={<Tabs label="Period" items={[["7", "7 days"], ["30", "30 days"], ["90", "90 days"]].map(([id, title]) => ({ id, title }))} value={days} onChange={setDays} />}
+    >
+      <div className={card}>
+        {!now ? (
+          <SkeletonRows n={3} />
+        ) : now.error ? (
+          <p className="px-4 py-6 text-sm text-muted">{now.error}</p>
+        ) : !now.sites.length ? (
+          <Empty>No visits recorded in this period yet.</Empty>
+        ) : (
+          <ul className="divide-y divide-line">
+            <Live key={days}>
+              {now.sites.map((s, i) => (
+                <LiveLi key={s.host} i={i} className="px-4 py-3 text-sm">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-medium text-fg">{name(s.host)}</span>
+                    <span className="tabular-nums">
+                      <CountUp value={s.visits} /> <span className="text-xs text-muted">visits · {s.views.toLocaleString("en-PH")} page views</span>
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sunken">
+                    <div className="h-full rounded-full bg-gold transition-[width] duration-700 ease-out" style={{ width: `${(s.visits / top) * 100}%` }} />
+                  </div>
+                </LiveLi>
+              ))}
+            </Live>
+          </ul>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+// open deals by stage, and how many were closed or lost
+function Pipeline({ leads }) {
+  const counts = Object.fromEntries(Object.keys(STAGES).map((k) => [k, (leads ?? []).filter((l) => l.stage === k).length]));
+  const top = Math.max(1, ...Object.values(counts));
+  return (
+    <Section title="Deals by stage" to="/leads" linkLabel="Open deals">
+      <div className={`${card} grid gap-3 p-5`}>
+        {!leads
+          ? [0, 1, 2].map((i) => <Skeleton key={i} className="h-6 w-full" />)
+          : Object.entries(STAGES).map(([k, label]) => (
+              <Link key={k} to={`/leads?stage=${k}`} className="group grid grid-cols-[6rem_1fr_2.5rem] items-center gap-3 text-sm">
+                <span className="text-muted group-hover:text-fg">{label}</span>
+                <span className="h-2.5 overflow-hidden rounded-full bg-sunken">
+                  <span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${OPEN.includes(k) ? "bg-navy" : k === "closed" ? "bg-gold" : "bg-muted/40"}`} style={{ width: `${(counts[k] / top) * 100}%` }} />
+                </span>
+                <span className="text-right font-medium text-fg tabular-nums">{counts[k]}</span>
+              </Link>
+            ))}
+      </div>
+    </Section>
+  );
+}

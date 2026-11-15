@@ -385,6 +385,9 @@ function Footer({ onOpen }) {
       <div className={`mx-auto flex max-w-[1480px] flex-wrap justify-between gap-4 border-t border-ink/10 py-6 text-[0.85rem] text-charcoal/70 ${GUTTER}`}>
         <span>© {new Date().getFullYear()} Heir Estates</span>
         <span>Renders and films by each project’s developer.</span>
+        <a href="/listings" className="text-ink underline-offset-4 hover:underline">
+          Listings
+        </a>
         <a href="/privacy/" className="text-ink underline-offset-4 hover:underline">
           Privacy notice
         </a>

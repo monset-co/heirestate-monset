@@ -244,6 +244,10 @@ export default function sites() {
           `<style>html:root{${Object.entries(projects[site].theme).map(([k, v]) => `${k}:${v}`).join(";")}}</style>`,
         `<script>document.documentElement.dataset.arrive=""</script>`,
         `<script type="application/ld+json">${ld}</script>`,
+        // Cloudflare Web Analytics, for the admin's dashboard: its token from the Web Analytics
+        // site's settings, set as CF_BEACON_TOKEN when building
+        process.env.CF_BEACON_TOKEN &&
+          `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"${esc(process.env.CF_BEACON_TOKEN)}"}'></script>`,
       ];
       return html
         .replace("<!--seo-->", head.filter(Boolean).join("\n    "))
