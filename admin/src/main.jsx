@@ -6,6 +6,7 @@ import "@fontsource-variable/hanken-grotesk";
 import "./admin.css";
 import App from "./App";
 import { toast } from "./motion";
+import "./install"; // catches the browser's install prompt before anything else can miss it
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>

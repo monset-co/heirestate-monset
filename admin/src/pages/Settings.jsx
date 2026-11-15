@@ -1,10 +1,64 @@
-import { useEffect, useState } from "react";
+import { Download } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useInstall, device } from "../install";
 import { supabase, run } from "../supabase";
 import { Skeleton, toast } from "../motion";
 import { ErrorNote, Field, PageHeader, btn, btnGhost, card, input } from "../ui";
 import { toCsv, download } from "../csv";
 
 const KEYS = ["contract_effective_date", "broker_name", "broker_prc_no", "broker_prc_valid_until", "broker_firm", "default_agent_id"];
+
+// Installing the admin as an app, with the steps for each kind of device; this device's first
+const STEPS = {
+  ios: ["iPhone or iPad", ["Open admin.heirestates.com in Safari.", "Tap the Share button (the square with an arrow pointing up).", "Scroll down and tap Add to Home Screen, then Add."]],
+  android: ["Android phone", ["Open admin.heirestates.com in Chrome.", "Tap Install app below, or the ⋮ menu → Install app (or Add to Home screen).", "Tap Install."]],
+  desktop: ["Windows or Mac, in Chrome or Edge", ["Click Install app below, or the install icon at the right of the address bar.", "Or open the browser menu → Cast, save and share → Install page as app (Chrome), or Apps → Install this site as an app (Edge)."]],
+  "mac-safari": ["Mac, in Safari", ["Open the File menu (or the Share button) → Add to Dock.", "Click Add."]],
+};
+
+function InstallApp() {
+  const install = useInstall();
+  const here = device();
+  const box = useRef(null);
+  useEffect(() => {
+    if (location.hash === "#install") box.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+  const order = [here, ...Object.keys(STEPS).filter((k) => k !== here)];
+  return (
+    <section ref={box} id="install" className={`${card} grid scroll-mt-6 gap-4 p-5`} aria-labelledby="install-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="install-title" className="font-display text-xl text-ink">Install the app</h2>
+          <p className="mt-1 max-w-prose text-sm text-muted">
+            The admin installs like an app: its own icon on the home screen or dock, its own window, and it opens fast. Sign-in and every change work exactly as in the browser.
+          </p>
+        </div>
+        {install.installed ? (
+          <span className="rounded-full bg-emerald-600/12 px-3 py-1 text-sm font-medium text-emerald-800">Installed on this device</span>
+        ) : (
+          install.canPrompt && (
+            <button type="button" className={btn} onClick={() => install.prompt().then((ok) => ok && toast("Installed. Open it from your home screen or apps."))}>
+              <Download className="size-4" aria-hidden /> Install app
+            </button>
+          )
+        )}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {order.map((k, i) => (
+          <div key={k} className={`rounded-lg border p-4 ${i === 0 ? "border-gold bg-gold/8" : "border-line"}`}>
+            <p className="text-sm font-semibold text-fg">
+              {STEPS[k][0]}
+              {i === 0 && <span className="label ml-2 text-gold-ink">This device</span>}
+            </p>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-charcoal">
+              {STEPS[k][1].map((s) => <li key={s}>{s}</li>)}
+            </ol>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 // Everything, as CSV (contract 8.5 and 11.4): each table in full, page by page
 async function everything(table, select = "*") {
@@ -135,6 +189,7 @@ export default function Settings() {
         </div>
       </form>
       <div className="mt-6 grid max-w-3xl gap-6">
+        <InstallApp />
         <Section title="Export all data" sub="Every listing, lead and commission row, as CSV files that open in Excel or Google Sheets.">
           {EXPORTS.map(([label, table, warn]) => (
             <div key={table} className="flex items-center justify-between gap-3 sm:col-span-2">

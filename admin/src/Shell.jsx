@@ -2,10 +2,11 @@
 // a navy rail whose active pill springs between items on desktop; on phones, a tab bar whose active
 // tab grows into a labelled pill, with everything else under More, a bottom sheet the page eases
 // back behind. Each page rises in on navigation.
-import { Building2, Inbox, LayoutDashboard, LogOut, Menu, Receipt, Settings, Users } from "lucide-react";
+import { Building2, Download, Inbox, LayoutDashboard, LogOut, Menu, Receipt, Settings, Users } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { useInstall } from "./install";
 import { supabase } from "./supabase";
 import { useMe } from "./me";
 import { spring, Toaster } from "./motion";
@@ -21,6 +22,24 @@ export const nav = [
 ];
 
 const signOut = () => supabase.auth.signOut();
+
+// "Install app": the browser's own prompt where there is one (Chrome, Edge, Android), otherwise
+// the steps for this device in Settings. Gone once the admin runs as an installed app.
+function InstallButton({ className }) {
+  const install = useInstall();
+  const navigate = useNavigate();
+  if (install.installed) return null;
+  const go = async () => {
+    if (install.canPrompt) await install.prompt();
+    else navigate("/settings#install");
+  };
+  return (
+    <button onClick={go} className={className}>
+      <Download className="size-4" aria-hidden />
+      Install app
+    </button>
+  );
+}
 
 function Mark() {
   return (
@@ -69,7 +88,8 @@ export default function Shell() {
               <div className="truncate font-medium">{me.name}</div>
               <div className="truncate text-xs text-cream/50">{me.email}</div>
             </div>
-            <button onClick={signOut} className="press mt-2 flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-cream/65 hover:bg-side-2 hover:text-cream">
+            <InstallButton className="press mt-2 flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gold hover:bg-side-2 hover:text-champagne" />
+            <button onClick={signOut} className="press flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-cream/65 hover:bg-side-2 hover:text-cream">
               <LogOut className="size-4" aria-hidden />
               Sign out
             </button>
@@ -159,6 +179,7 @@ function MoreSheet({ open, onClose, items }) {
           </li>
         ))}
       </ul>
+      <InstallButton className="press mx-4 mb-2 flex w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-xl bg-gold/15 px-4 py-3 text-sm font-medium text-champagne" />
       <button onClick={signOut} className="press mx-4 mb-4 flex w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm text-cream/65 ring-1 ring-cream/10 hover:text-cream">
         <LogOut className="size-4" aria-hidden /> Sign out
       </button>
