@@ -3,7 +3,9 @@ import { order, projects } from "../../src/projects.js";
 
 export const STAGES = { new: "New", contacted: "Contacted", viewing: "Viewing", reserved: "Reserved", closed: "Closed", lost: "Lost" };
 export const OPEN = ["new", "contacted", "viewing", "reserved"];
-export const SITES = { main: "heirestates.com", ...Object.fromEntries(order.map((id) => [id, projects[id].name])) };
+export const SITES = { main: "heirestates.com", ...Object.fromEntries(order.map((id) => [id, projects[id].name])), whatsapp: "WhatsApp" };
+export const TEMPS = { hot: "Hot", warm: "Warm", cold: "Cold" };
+export const QUIET_DAYS = 7; // an open lead with no contact this long has gone quiet
 
 // A buyer's papers, in the order a pre-selling sale collects them. The first five are the checklist.
 export const FOLDERS = {
@@ -17,6 +19,12 @@ export const FOLDERS = {
   other: "Other",
 };
 export const CHECKLIST = ["ids", "income", "reservation", "contract", "payments"];
+// After reserving, a buyer has 30 days to hand these in or the reservation can be forfeited. The
+// Contract to Sell comes later, from the developer, so it's checked off but not on the clock.
+export const PAPERS_DAYS = 30;
+export const ON_THE_CLOCK = ["ids", "income", "reservation", "payments"];
+export const papersDue = (reservedAt) => reservedAt && Math.ceil((Date.parse(reservedAt) + PAPERS_DAYS * 864e5 - Date.now()) / 864e5);
+export const quiet = (lastContact) => !!lastContact && Date.now() - Date.parse(lastContact) > QUIET_DAYS * 864e5;
 
 const day =new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric" });
 const full = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
@@ -29,3 +37,11 @@ export function ago(iso) {
   if (days === 1) return "Yesterday";
   return day.format(d);
 }
+
+// WhatsApp templates: what can be sent once 24 hours have passed since their last message.
+// ponytail: placeholders until the real ones are approved in Meta; then they come from Meta's API
+export const TEMPLATES = [
+  { name: "viewing_confirmation", label: "Confirm a viewing", text: "Hi {{1}}, this is {{2}} from Heir Estates. Confirming your viewing on {{3}}. Reply here if the time needs to change." },
+  { name: "follow_up", label: "Check in", text: "Hi {{1}}, it's {{2}} from Heir Estates. Just checking in on your interest in {{3}}. Any questions I can answer?" },
+  { name: "papers_reminder", label: "Papers reminder", text: "Hi {{1}}, a reminder that your reservation papers are due by {{2}}. Send them here or to your agent." },
+];

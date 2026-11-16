@@ -6,7 +6,7 @@ import { api } from "../api";
 import { useMe } from "../me";
 import { CountUp, Live, LiveLi, Skeleton, SkeletonRows } from "../motion";
 import { Badge, Empty, ErrorNote, Tabs, card } from "../ui";
-import { OPEN, SITES, STAGES, ago, when } from "../crm";
+import { ON_THE_CLOCK, OPEN, SITES, STAGES, ago, papersDue, quiet, when } from "../crm";
 
 const manila = (opts) => new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", ...opts });
 
@@ -21,16 +21,20 @@ export default function Dashboard() {
     const endOfToday = new Date();
     endOfToday.setHours(23, 59, 59, 999);
     Promise.all([
-      run(supabase.from("leads").select("id, name, stage, interest, source_site, created_at").order("created_at", { ascending: false })),
+      run(supabase.from("leads").select("id, name, stage, interest, source_site, created_at, reserved_at").order("created_at", { ascending: false })),
+      run(supabase.from("lead_overview").select("id, last_contact_at, papers_verified")),
       run(supabase.from("commissions").select("sale_date, project, listing_id, unit_code, cancelled")),
       run(supabase.from("reminders").select("id, body, due_at, lead_id, lead:leads(name)").is("done_at", null).lte("due_at", endOfToday.toISOString()).order("due_at")),
-    ]).then(([leads, commissions, reminders]) => setData({ leads, commissions, reminders }), (e) => setError(e.message));
+    ]).then(([leads, overview, commissions, reminders]) => {
+      const o = new Map(overview.map((r) => [r.id, r]));
+      setData({ leads: leads.map((l) => ({ ...l, ...o.get(l.id) })), commissions, reminders });
+    }, (e) => setError(e.message));
   }, []);
 
   const week = Date.now() - 7 * 864e5;
   const year = String(new Date().getFullYear());
   const stats = data && [
-    ["New inquiries · 7 days", data.leads.filter((l) => Date.parse(l.created_at) >= week).length, "/leads?stage=all"],
+    ["New inquiries · 7 days", data.leads.filter((l) => Date.parse(l.created_at) >= week).length, "/leads?list=all"],
     ["Open deals", data.leads.filter((l) => OPEN.includes(l.stage)).length, "/leads"],
     [`Sales in ${year}`, new Set(data.commissions.filter((c) => !c.cancelled && c.sale_date.startsWith(year)).map((c) => `${c.project ?? c.listing_id}:${c.unit_code}`)).size, "/commissions"],
     ["Follow-ups due", data.reminders.length, "/leads"],
@@ -96,7 +100,8 @@ export default function Dashboard() {
               )}
             </div>
           </Section>
-          <Section title="Latest inquiries" to="/leads?stage=all" linkLabel="All leads">
+          <NeedsYou leads={data?.leads} />
+          <Section title="Latest inquiries" to="/leads?list=all" linkLabel="All leads">
             <div className={card}>
               {!data ? (
                 <SkeletonRows />
@@ -218,5 +223,45 @@ function Pipeline({ leads }) {
             ))}
       </div>
     </Section>
+  );
+}
+
+// Reserved buyers whose papers aren't all in, soonest deadline first, and open leads gone quiet.
+function NeedsYou({ leads }) {
+  if (!leads) return null;
+  const papers = leads
+    .filter((l) => l.stage === "reserved" && l.papers_verified < ON_THE_CLOCK.length)
+    .sort((a, b) => papersDue(a.reserved_at) - papersDue(b.reserved_at));
+  const gone = leads.filter((l) => OPEN.includes(l.stage) && quiet(l.last_contact_at)).sort((a, b) => a.last_contact_at.localeCompare(b.last_contact_at));
+  const row = (l, right, tab, urgent) => (
+    <LiveLi key={l.id} i={0}>
+      <Link to={`/leads/${l.id}${tab ? `?tab=${tab}` : ""}`} className="flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-bg">
+        <span className="min-w-0 flex-1 truncate font-medium text-fg">{l.name}</span>
+        <span className={`text-xs whitespace-nowrap ${urgent ? "font-medium text-danger" : "text-muted"}`}>{right}</span>
+      </Link>
+    </LiveLi>
+  );
+  return (
+    <>
+      {papers.length > 0 && (
+        <Section title="Papers due" to="/leads?list=papers" linkLabel="All">
+          <ul className={`${card} divide-y divide-line`}>
+            <Live>
+              {papers.slice(0, 5).map((l) => {
+                const d = papersDue(l.reserved_at);
+                return row(l, `${l.papers_verified}/${ON_THE_CLOCK.length} verified · ${d >= 0 ? `${d} days left` : "overdue"}`, "Files", d <= 7);
+              })}
+            </Live>
+          </ul>
+        </Section>
+      )}
+      {gone.length > 0 && (
+        <Section title="Gone quiet" to="/leads?list=quiet" linkLabel="All">
+          <ul className={`${card} divide-y divide-line`}>
+            <Live>{gone.slice(0, 5).map((l) => row(l, `Last contact ${ago(l.last_contact_at)}`))}</Live>
+          </ul>
+        </Section>
+      )}
+    </>
   );
 }

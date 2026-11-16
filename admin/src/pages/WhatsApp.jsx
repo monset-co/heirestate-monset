@@ -1,22 +1,24 @@
 // WhatsApp: every chat on the business number, live. Chats on the left, the open one on the right (on
 // phones, one at a time). Messages arrive through Meta's webhook (admin/worker/whatsapp.js) and show
 // here through Supabase Realtime; replies go out through the Worker.
-import { AlertCircle, Check, CheckCheck, ChevronLeft, Clock, Download, FolderInput, ImageIcon, Send } from "lucide-react";
+import { AlertCircle, Check, CheckCheck, ChevronLeft, Clock, Download, FolderInput, ImageIcon, Send, Sparkles, UserPlus } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link, NavLink, useParams } from "react-router";
+import { Link, NavLink, useNavigate, useParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { SkeletonRows, toast } from "../motion";
 import { saveFile } from "./FilesTab";
 import { Empty, ErrorNote, btn, card, input } from "../ui";
-import { ago, when } from "../crm";
+import { TEMPLATES, ago, when } from "../crm";
 
-const THREAD = "id, wa_id, name, lead_id, unread, last_message_at, last_inbound_at, lead:leads(id, name)";
+export const THREAD = "id, wa_id, name, lead_id, unread, last_message_at, last_inbound_at, lead:leads(id, name)";
 const MSG = "id, thread_id, direction, type, body, media_id, media_name, status, error, sent_by, created_at";
 const byRecent = (a, b) => (b.last_message_at ?? "").localeCompare(a.last_message_at ?? "");
 const merge = (list, row) => [...list.filter((x) => x.id !== row.id), row];
 const phone = (wa) => `+${wa}`;
 const canReply = (t) => t?.last_inbound_at && Date.now() - new Date(t.last_inbound_at) < 864e5;
+// hours left to reply freely: WhatsApp's 24-hour customer service window
+const hoursLeft = (t) => Math.max(0, Math.ceil((Date.parse(t.last_inbound_at) + 864e5 - Date.now()) / 36e5));
 
 export default function WhatsApp() {
   const { id } = useParams();
@@ -76,7 +78,7 @@ export default function WhatsApp() {
   );
 }
 
-function Chat({ thread, onChange }) {
+export function Chat({ thread, onChange }) {
   const [msgs, setMsgs] = useState(null);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
@@ -129,6 +131,10 @@ function Chat({ thread, onChange }) {
           <p className="text-xs text-muted">
             {phone(thread.wa_id)}
             {thread.name && thread.lead && ` · “${thread.name}” on WhatsApp`}
+            {" · "}
+            <span className={open ? (hoursLeft(thread) <= 3 ? "font-medium text-danger" : "") : "font-medium"}>
+              {open ? `Reply window: ${hoursLeft(thread)}h left` : "Reply window closed"}
+            </span>
           </p>
         </div>
         <LeadLink thread={thread} onChange={onChange} />
@@ -141,6 +147,7 @@ function Chat({ thread, onChange }) {
 
       <div className="border-t border-line p-3">
         <ErrorNote error={error} />
+        <Copilot />
         {open ? (
           <form onSubmit={send} className="mt-0 flex items-end gap-2">
             <label className="flex-1">
@@ -160,9 +167,7 @@ function Chat({ thread, onChange }) {
             </button>
           </form>
         ) : (
-          <p className="rounded-md bg-sunken px-3 py-2.5 text-sm text-muted">
-            It's been more than 24 hours since their last message, so WhatsApp only allows an approved template message. You can reply here again as soon as they write.
-          </p>
+          <Templates thread={thread} />
         )}
       </div>
     </>
@@ -261,10 +266,57 @@ function Media({ m, leadId }) {
   );
 }
 
-// the lead this chat is with: found by mobile when it started, or chosen here
+// The AI copilot (Claude): drafts a reply or sums the chat up as a sticky note. It never sends on its
+// own; an agent reads, edits and presses Send.
+// ponytail: buttons only, until WhatsApp is connected and the Worker has an /api/copilot route
+function Copilot() {
+  const soon = "Coming once WhatsApp is connected";
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="inline-flex items-center gap-1 font-semibold text-accent-ink">
+        <Sparkles className="size-3.5" aria-hidden /> Copilot
+      </span>
+      {["Draft a reply", "Sum up as a sticky note"].map((l) => (
+        <button key={l} type="button" disabled title={soon} className="rounded-full border border-line px-2.5 py-1 text-muted disabled:cursor-not-allowed">
+          {l}
+        </button>
+      ))}
+      <span className="text-muted">· {soon}</span>
+    </div>
+  );
+}
+
+// After 24 hours only an approved template can go out. The picker and its preview work; sending waits
+// for templates approved in Meta and a Worker route to send them.
+// ponytail: TEMPLATES are placeholders in crm.js; fetch the approved list from Meta once connected
+function Templates({ thread }) {
+  const [pick, setPick] = useState(TEMPLATES[0]);
+  const first = (thread.lead?.name ?? thread.name ?? "").split(" ")[0];
+  return (
+    <div className="grid gap-2 rounded-md bg-sunken p-3 text-sm">
+      <p className="text-muted">More than 24 hours since their last message, so WhatsApp only allows an approved template. Free replies open again as soon as they write.</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="grid gap-1">
+          <span className="label text-ink">Template</span>
+          <select value={pick.name} onChange={(e) => setPick(TEMPLATES.find((t) => t.name === e.target.value))} className={`${input} w-52 py-1.5`}>
+            {TEMPLATES.map((t) => <option key={t.name} value={t.name}>{t.label}</option>)}
+          </select>
+        </label>
+        <button type="button" disabled title="Templates send once they're approved in Meta and WhatsApp is connected" className={btn}>
+          <Send className="size-4" aria-hidden /> Send template
+        </button>
+      </div>
+      <p className="rounded-md border border-line bg-surface px-3 py-2 whitespace-pre-wrap">{first ? pick.text.replace("{{1}}", first) : pick.text}</p>
+    </div>
+  );
+}
+
+// the lead this chat is with: found by mobile when it started, or chosen here, or made from the chat
 function LeadLink({ thread, onChange }) {
+  const navigate = useNavigate();
   const [leads, setLeads] = useState(null);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   if (thread.lead) return <Link to={`/leads/${thread.lead.id}`} className="text-sm underline underline-offset-2">Open lead</Link>;
 
   async function link(e) {
@@ -277,7 +329,29 @@ function LeadLink({ thread, onChange }) {
       setError(err.message);
     }
   }
+  // A new lead from this chat, assigned like a website inquiry, with a reminder to call them back.
+  // ponytail: a button for now; making leads automatically waits for WhatsApp to be connected
+  async function make() {
+    setBusy(true);
+    setError("");
+    try {
+      const name = (thread.name ?? phone(thread.wa_id)).slice(0, 100).padEnd(2, "?");
+      const lead = await run(supabase.from("leads").insert({ source_site: "whatsapp", name, mobile: phone(thread.wa_id), interest: "WhatsApp inquiry" }).select("id, name, agent_id").single());
+      await run(supabase.from("wa_threads").update({ lead_id: lead.id }).eq("id", thread.id));
+      await run(supabase.from("reminders").insert({ lead_id: lead.id, agent_id: lead.agent_id, due_at: new Date(Date.now() + 36e5).toISOString(), body: "Call them back: they wrote on WhatsApp" }));
+      onChange({ id: thread.id, lead_id: lead.id, lead: { id: lead.id, name: lead.name } });
+      toast("Lead made, with a reminder to call them within the hour", { action: { label: "Open", run: () => navigate(`/leads/${lead.id}`) } });
+    } catch (err) {
+      setError(err.message);
+    }
+    setBusy(false);
+  }
+
   return (
+    <div className="flex items-center gap-2">
+    <button type="button" onClick={make} disabled={busy} className="press inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm hover:border-muted/50 disabled:opacity-50" title={error || "Make a lead from this chat"}>
+      <UserPlus className="size-4" aria-hidden /> {busy ? "Making…" : "Make a lead"}
+    </button>
     <label className="text-sm">
       <span className="sr-only">Link to a lead</span>
       <select
@@ -291,5 +365,6 @@ function LeadLink({ thread, onChange }) {
         {leads?.map((l) => <option key={l.id} value={l.id}>{l.name} · {l.mobile}</option>)}
       </select>
     </label>
+    </div>
   );
 }

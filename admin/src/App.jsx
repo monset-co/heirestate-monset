@@ -15,6 +15,7 @@ import Report from "./pages/Report";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
 import WhatsApp from "./pages/WhatsApp";
+import Guide from "./pages/Guide";
 
 const router = createBrowserRouter([
   {
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
       { path: "commissions/report", element: <Report /> },
       { path: "users", element: <Users /> },
       { path: "settings", element: <Settings /> },
+      { path: "guide", element: <Guide /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

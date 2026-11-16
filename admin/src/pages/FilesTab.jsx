@@ -1,12 +1,12 @@
 // A lead's files: drop them anywhere on the tab, sort them into the buyer's folders (drag a file onto
 // a folder, or choose one), and open them here: PDFs in the dashboard's reader or as a presentation,
 // photos as they are, Word, Excel and PowerPoint in Microsoft's viewer.
-import { CircleCheck, Circle, Download, FileText, FileImage, FileSpreadsheet, Presentation, Trash2, Upload, X } from "lucide-react";
+import { CircleCheck, CircleDot, CircleX, Circle, Download, FileText, FileImage, FileSpreadsheet, Presentation, Trash2, Upload, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, SkeletonRows, toast } from "../motion";
 import { Empty, ErrorNote, btnGhost, card, input } from "../ui";
-import { CHECKLIST, FOLDERS, ago } from "../crm";
+import { CHECKLIST, FOLDERS, ON_THE_CLOCK, PAPERS_DAYS, ago, papersDue } from "../crm";
 
 const PdfDeck = lazy(() => import("../PdfDeck"));
 export const FILES = "client-files";
@@ -54,7 +54,15 @@ export async function saveFile(leadId, folder, file, name = file.name) {
 
 const signed = async (f, secs = 300) => (await run(supabase.storage.from(FILES).createSignedUrl(f.file_path, secs))).signedUrl;
 
-export default function FilesTab({ leadId }) {
+// a checklist folder's state: no files, files not yet looked at, or checked by someone
+const STATUS = {
+  missing: [Circle, "Missing", "opacity-40"],
+  uploaded: [CircleDot, "Uploaded, not checked", "text-gold-ink"],
+  verified: [CircleCheck, "Verified", "text-emerald-600"],
+  rejected: [CircleX, "Rejected", "text-danger"],
+};
+
+export default function FilesTab({ leadId, lead, onChecked }) {
   const [files, setFiles] = useState(null);
   const [folder, setFolder] = useState("all");
   const [error, setError] = useState("");
@@ -63,7 +71,13 @@ export default function FilesTab({ leadId }) {
   const [open, setOpen] = useState(null); // { file, url, present }
   const picker = useRef(null);
 
+  const [checks, setChecks] = useState({}); // item -> { status, reason, checked_by, checked_at }
+
   useEffect(() => {
+    run(supabase.from("lead_checklist").select("item, status, reason, checked_by, checked_at").eq("lead_id", leadId)).then(
+      (rows) => setChecks(Object.fromEntries(rows.map((r) => [r.item, r]))),
+      (e) => setError(e.message)
+    );
     run(supabase.from("lead_files").select("*").eq("lead_id", leadId).order("created_at", { ascending: false })).then(setFiles, (e) => setError(e.message));
   }, [leadId]);
 
@@ -150,8 +164,35 @@ export default function FilesTab({ leadId }) {
   });
 
   const count = (k) => files?.filter((f) => f.folder === k).length ?? 0;
+  const statusOf = (k) => checks[k]?.status ?? (count(k) ? "uploaded" : "missing");
+
+  // verify, reject (with a reason the buyer can act on), or clear back to unchecked
+  async function check(item, status) {
+    let reason = null;
+    if (status === "rejected") {
+      reason = prompt(`Why is ${FOLDERS[item]} rejected? (blurry ID, expired, wrong month's payslip…)`)?.trim();
+      if (!reason) return;
+    }
+    let next;
+    try {
+      if (status) {
+        const row = await run(supabase.from("lead_checklist").upsert({ lead_id: leadId, item, status, reason }).select("item, status, reason, checked_by, checked_at").single());
+        next = { ...checks, [item]: row };
+      } else {
+        await run(supabase.from("lead_checklist").delete().eq("lead_id", leadId).eq("item", item));
+        next = { ...checks };
+        delete next[item];
+      }
+      setChecks(next);
+      onChecked?.(ON_THE_CLOCK.filter((k) => next[k]?.status === "verified").length);
+      toast(status ? `${FOLDERS[item]}: ${STATUS[status][1].toLowerCase()}` : `${FOLDERS[item]}: back to unchecked`);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
   const shown = files?.filter((f) => folder === "all" || f.folder === folder);
-  const done = CHECKLIST.filter((k) => count(k)).length;
+  const done = CHECKLIST.filter((k) => statusOf(k) === "verified").length;
+  const days = lead?.stage === "reserved" && papersDue(lead.reserved_at);
   const folderBtn = (k, label, n, check) => (
     <li key={k}>
       <button
@@ -163,7 +204,10 @@ export default function FilesTab({ leadId }) {
           over === k ? "bg-gold/25 ring-2 ring-gold" : folder === k ? "bg-navy text-cream" : "hover:bg-sunken"
         }`}
       >
-        {check !== undefined && (check ? <CircleCheck className="size-4 shrink-0 text-emerald-600" aria-label="Has files" /> : <Circle className="size-4 shrink-0 opacity-40" aria-label="Nothing yet" />)}
+        {check && (() => {
+          const [Icon, label, tone] = STATUS[check];
+          return <Icon className={`size-4 shrink-0 ${folder === k ? "" : tone}`} aria-label={label} />;
+        })()}
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <span className={`text-xs tabular-nums ${folder === k ? "text-cream/70" : "text-muted"}`}>{n || ""}</span>
       </button>
@@ -174,17 +218,23 @@ export default function FilesTab({ leadId }) {
     <div {...dropOn(null)} className="grid max-w-5xl gap-6 md:grid-cols-[15rem_minmax(0,1fr)]">
       <nav aria-label="Folders" className="h-fit">
         <p className="label mb-2 px-3 text-muted">
-          Checklist · <span className="tabular-nums">{done} of {CHECKLIST.length}</span>
+          Checklist · <span className="tabular-nums">{done} of {CHECKLIST.length} verified</span>
         </p>
+        {days != null && days !== false && ON_THE_CLOCK.some((k) => statusOf(k) !== "verified") && (
+          <p className={`mb-2 px-3 text-xs ${days <= 7 ? "font-medium text-danger" : "text-muted"}`}>
+            {days >= 0 ? `${days} of ${PAPERS_DAYS} days left to hand in papers` : `${-days} days past the ${PAPERS_DAYS}-day deadline`}
+          </p>
+        )}
         <ul className="grid gap-0.5">
           {folderBtn("all", "All files", files?.length)}
-          {CHECKLIST.map((k) => folderBtn(k, FOLDERS[k], count(k), count(k) > 0))}
+          {CHECKLIST.map((k) => folderBtn(k, FOLDERS[k], count(k), statusOf(k)))}
         </ul>
         <ul className="mt-3 grid gap-0.5 border-t border-line pt-3">{Object.keys(FOLDERS).filter((k) => !CHECKLIST.includes(k)).map((k) => folderBtn(k, FOLDERS[k], count(k)))}</ul>
       </nav>
 
       <div className="grid h-fit gap-4">
         <ErrorNote error={error} />
+        {CHECKLIST.includes(folder) && <CheckBar item={folder} status={statusOf(folder)} row={checks[folder]} onCheck={check} />}
         <button
           type="button"
           onClick={() => picker.current.click()}
@@ -257,6 +307,46 @@ export default function FilesTab({ leadId }) {
       </div>
 
       {open && <Viewer {...open} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
+// Above a checklist folder: where it stands, and the buttons to check it off.
+function CheckBar({ item, status, row, onCheck }) {
+  const [Icon, label, tone] = STATUS[status];
+  const small = "press rounded-md px-2.5 py-1.5 text-xs font-semibold";
+  return (
+    <div className={`${card} flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 text-sm`}>
+      <Icon className={`size-5 ${tone}`} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-fg">
+          {FOLDERS[item]}: {label}
+        </p>
+        {row && (
+          <p className="text-xs text-muted">
+            {row.reason && <span className="text-danger">{row.reason} · </span>}
+            {row.checked_by?.split("@")[0]} · {ago(row.checked_at)}
+          </p>
+        )}
+        {status === "missing" && <p className="text-xs text-muted">Nothing here yet. Drop the files in, then verify them.</p>}
+      </div>
+      <div className="flex gap-1.5">
+        {status !== "verified" && status !== "missing" && (
+          <button type="button" onClick={() => onCheck(item, "verified")} className={`${small} bg-emerald-700 text-white hover:bg-emerald-800`}>
+            Verify
+          </button>
+        )}
+        {status !== "rejected" && status !== "missing" && (
+          <button type="button" onClick={() => onCheck(item, "rejected")} className={`${small} border border-line text-danger hover:bg-danger/10`}>
+            Reject…
+          </button>
+        )}
+        {row && (
+          <button type="button" onClick={() => onCheck(item, null)} className={`${small} text-muted hover:bg-sunken`}>
+            Clear
+          </button>
+        )}
+      </div>
     </div>
   );
 }

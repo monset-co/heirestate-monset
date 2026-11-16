@@ -123,6 +123,23 @@ await fails(() => admin("update lead_notes set color = 'purple'"), /check constr
 await admin("insert into lead_files (lead_id, folder, file_path, file_name) values ($1, 'ids', $2, 'passport.pdf')", [lead, `${lead}/x-passport.pdf`]);
 await fails(() => admin("insert into lead_files (lead_id, folder, file_path, file_name) values ($1, 'secret', $2, 'a.pdf')", [lead, `${lead}/y.pdf`]), /check constraint/);
 assert.equal((await stranger("select count(*)::int n from lead_files"))[0].n, 0, "only admins see a client's files");
+
+// reserved: the 30-day clock starts, papers are checked off, the follow-up picture adds up
+await admin("update leads set stage = 'reserved', temperature = 'hot' where id = $1", [lead]);
+assert.ok((await admin("select reserved_at from leads where id = $1", [lead]))[0].reserved_at, "reserving starts the clock");
+await admin("insert into lead_checklist (lead_id, item, status) values ($1, 'ids', 'verified')", [lead]);
+await fails(() => admin("insert into lead_checklist (lead_id, item, status) values ($1, 'income', 'rejected')", [lead]), /rejected_has_reason/);
+await fails(() => admin("update leads set temperature = 'lukewarm' where id = $1", [lead]), /check constraint/);
+await admin("insert into reminders (lead_id, due_at, body) values ($1, now() + interval '1 day', 'Collect the payslips')", [lead]);
+const [ov] = await admin("select * from lead_overview where id = $1", [lead]);
+assert.equal(ov.papers_verified, 1);
+assert.equal(ov.next_step, "Collect the payslips");
+assert.ok(ov.last_contact_at, "a note and a stage change count as contact");
+assert.equal((await stranger("select count(*)::int n from lead_overview"))[0].n, 0, "the view keeps RLS");
+await admin("update leads set stage = 'viewing' where id = $1", [lead]);
+assert.equal((await admin("select reserved_at from leads where id = $1", [lead]))[0].reserved_at, null, "back a stage stops the clock");
+// a lead that started on WhatsApp: no email, no website consent
+await admin("insert into leads (source_site, name, mobile) values ('whatsapp', 'Ana', '+639181112222')");
 await admin("insert into reminders (lead_id, due_at, body) values ($1, now(), 'Call Juan back')", [lead]);
 await admin("update leads set stage = 'contacted' where id = $1", [lead]);
 assert.ok((await admin("select count(*)::int n from activity where lead_id = $1", [lead]))[0].n >= 4);

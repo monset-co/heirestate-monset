@@ -4,12 +4,13 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
 import { Badge, Empty, ErrorNote, Field, Tabs, btn, btnDanger, btnGhost, card, input } from "../ui";
-import { SITES, STAGES, when } from "../crm";
+import { ON_THE_CLOCK, OPEN, SITES, STAGES, TEMPS, ago, papersDue, quiet, when } from "../crm";
 import Activity from "./Activity";
 import FilesTab, { FILES } from "./FilesTab";
 import { NOTE, Notes, Pinned } from "./StickyNotes";
+import { Chat, THREAD } from "./WhatsApp";
 
-const TABS = ["Overview", "Notes", "Files", "Reminders", "Activity"];
+const TABS = ["Overview", "Notes", "Files", "WhatsApp", "Reminders", "Activity"];
 
 // One lead, laid out as the dashboard's client pages are: a header, then tabs kept in the address.
 export default function LeadDetail() {
@@ -18,6 +19,7 @@ export default function LeadDetail() {
   const [params, setParams] = useSearchParams();
   const [lead, setLead] = useState(null);
   const [chat, setChat] = useState(null); // their WhatsApp chat, if they've written
+  const [overview, setOverview] = useState(null); // last contact, next step, papers verified (lead_overview)
   const [notes, setNotes] = useState(null); // shared by the pinned stickies up top and the Notes tab
   const [error, setError] = useState("");
   const tab = TABS.includes(params.get("tab")) ? params.get("tab") : "Overview";
@@ -25,7 +27,8 @@ export default function LeadDetail() {
   useEffect(() => {
     run(supabase.from("leads").select("*, listing:listings(id, title)").eq("id", id).maybeSingle()).then((row) => (row ? setLead(row) : setError("No such lead. It may have been deleted.")), (e) => setError(e.message));
     run(supabase.from("lead_notes").select(NOTE).eq("lead_id", id).order("created_at", { ascending: false })).then(setNotes, (e) => setError(e.message));
-    run(supabase.from("wa_threads").select("id").eq("lead_id", id).limit(1).maybeSingle()).then(setChat, () => {});
+    run(supabase.from("wa_threads").select(THREAD).eq("lead_id", id).limit(1).maybeSingle()).then(setChat, () => {});
+    run(supabase.from("lead_overview").select("*").eq("id", id).maybeSingle()).then(setOverview, () => {});
   }, [id]);
 
   // the Data Privacy Act: a person may ask for their details to be deleted
@@ -67,18 +70,15 @@ export default function LeadDetail() {
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <h1 className="font-display text-[2.1rem] leading-tight tracking-[-0.01em] text-ink">{lead.name}</h1>
         <Badge value={lead.stage}>{STAGES[lead.stage]}</Badge>
-        {chat && (
-          <Link to={`/whatsapp/${chat.id}`} className={`${btnGhost} ml-auto`}>
-            <MessageCircle className="size-4" aria-hidden /> WhatsApp chat
-          </Link>
-        )}
-        <button className={`${btnDanger} ${chat ? "" : "ml-auto"}`} onClick={remove}>
+        <Temperature lead={lead} onSaved={(temperature) => setLead({ ...lead, temperature })} />
+        <button className={`${btnDanger} ml-auto`} onClick={remove}>
           <Trash2 className="size-4" aria-hidden /> Delete on request
         </button>
       </div>
       <p className="mt-1 text-sm text-muted">
-        {lead.interest} · {SITES[lead.source_site] ?? lead.source_site} · {when(lead.created_at)}
+        {[lead.interest, SITES[lead.source_site] ?? lead.source_site, when(lead.created_at)].filter(Boolean).join(" · ")}
       </p>
+      <FollowUp lead={lead} o={overview} onTab={(t) => setParams({ tab: t }, { replace: true })} />
       <div className="mt-3">
         <ErrorNote error={error} />
       </div>
@@ -91,11 +91,86 @@ export default function LeadDetail() {
       <div className="mt-6">
         {tab === "Overview" && <Overview lead={lead} onSaved={(l) => setLead({ ...lead, ...l })} />}
         {tab === "Notes" && <Notes leadId={lead.id} notes={notes} setNotes={setNotes} />}
-        {tab === "Files" && <FilesTab leadId={lead.id} />}
+        {tab === "Files" && <FilesTab leadId={lead.id} lead={lead} onChecked={(papers_verified) => setOverview((o) => o && { ...o, papers_verified })} />}
+        {tab === "WhatsApp" && <LeadChat lead={lead} chat={chat} setChat={setChat} />}
         {tab === "Reminders" && <Reminders lead={lead} />}
         {tab === "Activity" && <Activity lead={lead.id} />}
       </div>
     </>
+  );
+}
+
+// Hot, warm or cold: tap one to set it, tap it again to clear it.
+function Temperature({ lead, onSaved }) {
+  async function set(t) {
+    const temperature = lead.temperature === t ? null : t;
+    onSaved(temperature);
+    try {
+      await run(supabase.from("leads").update({ temperature }).eq("id", lead.id));
+    } catch (e) {
+      onSaved(lead.temperature);
+      toast(e.message);
+    }
+  }
+  return (
+    <div role="group" aria-label="How warm is this lead" className="inline-flex rounded-md border border-line bg-surface p-0.5">
+      {Object.entries(TEMPS).map(([k, label]) => (
+        <button key={k} type="button" aria-pressed={lead.temperature === k} onClick={() => set(k)} className={`press rounded px-2.5 py-1 text-xs font-semibold transition-colors duration-150 ${lead.temperature === k ? { hot: "bg-burgundy text-cream", warm: "bg-gold text-navy", cold: "bg-sky-700 text-white" }[k] : "text-muted hover:text-fg"}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// the line every CRM puts under a name: when we last spoke, what happens next, and the papers clock
+function FollowUp({ lead, o, onTab }) {
+  if (!o) return null;
+  const open = OPEN.includes(lead.stage);
+  const days = lead.stage === "reserved" && papersDue(lead.reserved_at);
+  const link = "underline-offset-2 hover:underline";
+  return (
+    <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+      <span className={open && quiet(o.last_contact_at) ? "font-medium text-danger" : "text-muted"}>
+        Last contact {ago(o.last_contact_at)}
+        {open && quiet(o.last_contact_at) && " · gone quiet"}
+      </span>
+      {o.next_step ? (
+        <button type="button" onClick={() => onTab("Reminders")} className={`${link} ${Date.parse(o.next_step_at) < Date.now() ? "text-danger" : "text-fg"}`}>
+          Next: {o.next_step} · {ago(o.next_step_at)}
+        </button>
+      ) : (
+        open && <button type="button" onClick={() => onTab("Reminders")} className={`${link} text-accent-ink`}>No next step. Set a reminder</button>
+      )}
+      {days !== false && days != null && (
+        <button type="button" onClick={() => onTab("Files")} className={`${link} ${o.papers_verified < ON_THE_CLOCK.length && days <= 7 ? "font-medium text-danger" : "text-fg"}`}>
+          Papers {o.papers_verified} of {ON_THE_CLOCK.length} verified
+          {o.papers_verified < ON_THE_CLOCK.length && ` · ${days >= 0 ? `${days} days left` : "past the 30 days"}`}
+        </button>
+      )}
+    </p>
+  );
+}
+
+// Their WhatsApp chat, the same as in the inbox. No chat yet: open one from a phone with click-to-chat.
+function LeadChat({ lead, chat, setChat }) {
+  if (chat)
+    return (
+      <div className={`${card} flex h-[min(42rem,calc(100dvh-14rem))] max-w-4xl flex-col overflow-hidden`}>
+        <Chat thread={chat} onChange={(row) => setChat({ ...chat, ...row })} />
+      </div>
+    );
+  const digits = lead.mobile.replace(/\D/g, "").replace(/^0/, "63");
+  return (
+    <div className={`${card} grid max-w-xl justify-items-start gap-3 p-5 text-sm`}>
+      <h2 className="font-display text-xl text-ink">No WhatsApp chat yet</h2>
+      <p className="text-muted">
+        Their chat shows here once they write to the business number, or once a chat on that number is linked to them. To start one now, message them from a phone; WhatsApp only lets a business open a chat with an approved template.
+      </p>
+      <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer" className={btnGhost}>
+        <MessageCircle className="size-4" aria-hidden /> Open in WhatsApp
+      </a>
+    </div>
   );
 }
 
@@ -133,13 +208,13 @@ function Overview({ lead, onSaved }) {
 
   const rows = [
     ["Mobile", <a key="tel" href={`tel:${lead.mobile.replace(/[^\d+]/g, "")}`} className="inline-flex items-center gap-1.5 underline underline-offset-2"><Phone className="size-3.5" aria-hidden />{lead.mobile}</a>],
-    ["Email", <a key="mail" href={`mailto:${lead.email}`} className="inline-flex items-center gap-1.5 break-all underline underline-offset-2"><Mail className="size-3.5 shrink-0" aria-hidden />{lead.email}</a>],
+    ["Email", lead.email && <a key="mail" href={`mailto:${lead.email}`} className="inline-flex items-center gap-1.5 break-all underline underline-offset-2"><Mail className="size-3.5 shrink-0" aria-hidden />{lead.email}</a>],
     ["Interested in", lead.interest],
     ["Listing", lead.listing && <Link key="l" to={`/listings/${lead.listing.id}`} className="underline underline-offset-2">{lead.listing.title}</Link>],
     ["Budget", lead.budget],
     ["Preferred viewing", lead.viewing_time],
     ["From", SITES[lead.source_site] ?? lead.source_site],
-    ["Consent given", when(lead.consent_at)],
+    ["Consent given", lead.consent_at ? when(lead.consent_at) : lead.source_site === "whatsapp" && "Wrote to us on WhatsApp; no website form"],
   ];
   return (
     <div className="stagger grid max-w-5xl gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">

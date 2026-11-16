@@ -61,6 +61,10 @@ const tone = {
   viewing: "bg-violet-600/12 text-violet-800",
   closed: "bg-emerald-600/12 text-emerald-800",
   lost: "bg-sunken text-muted",
+  // how warm a lead is
+  hot: "bg-burgundy/12 text-burgundy",
+  warm: "bg-gold/25 text-gold-ink",
+  cold: "bg-sky-600/12 text-sky-800",
 };
 export function Badge({ value, children }) {
   return (
