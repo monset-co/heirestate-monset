@@ -219,3 +219,28 @@
     transform: none;
   }
 }
+
+/* Sticky notes on a lead: paper colours, a soft lift, and a strip of tape on pinned ones. */
+.sticky-yellow { background: #fbeaa8; }
+.sticky-pink { background: #f7d3d6; }
+.sticky-blue { background: #d5e3f1; }
+.sticky-green { background: #d8e9cf; }
+.sticky-note {
+  position: relative;
+  color: #2a2a22;
+  box-shadow: 0 1px 1px rgb(20 33 58 / 0.08), 0 10px 18px -10px rgb(20 33 58 / 0.35);
+}
+.sticky-tape {
+  position: absolute;
+  top: -0.6rem;
+  left: 50%;
+  width: 4.5rem;
+  height: 1.25rem;
+  translate: -50% 0;
+  rotate: -2deg;
+  background: rgb(255 253 249 / 0.6);
+  box-shadow: 0 1px 2px rgb(20 33 58 / 0.12);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sticky-note { transition: none; }
+}

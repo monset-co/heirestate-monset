@@ -5,7 +5,20 @@ export const STAGES = { new: "New", contacted: "Contacted", viewing: "Viewing", 
 export const OPEN = ["new", "contacted", "viewing", "reserved"];
 export const SITES = { main: "heirestates.com", ...Object.fromEntries(order.map((id) => [id, projects[id].name])) };
 
-const day = new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric" });
+// A buyer's papers, in the order a pre-selling sale collects them. The first five are the checklist.
+export const FOLDERS = {
+  ids: "IDs & TIN",
+  income: "Proof of income",
+  reservation: "Reservation",
+  contract: "Contract to Sell",
+  payments: "Payments & PDCs",
+  presentations: "Presentations",
+  whatsapp: "From WhatsApp",
+  other: "Other",
+};
+export const CHECKLIST = ["ids", "income", "reservation", "contract", "payments"];
+
+const day =new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric" });
 const full = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
 export const when = (iso) => full.format(new Date(iso));
 // "Today, 9:14 AM", "Yesterday", "Nov 12"
