@@ -7,6 +7,9 @@
 // Secrets, once each:  npx wrangler secret put SUPABASE_SECRET_KEY -c wrangler.admin.jsonc
 //                      npx wrangler secret put RESEND_API_KEY -c wrangler.admin.jsonc
 //                      npx wrangler secret put CF_API_TOKEN -c wrangler.admin.jsonc
+//                      npx wrangler secret put WA_TOKEN -c wrangler.admin.jsonc         (Meta system user token)
+//                      npx wrangler secret put WA_APP_SECRET -c wrangler.admin.jsonc    (Meta app > Settings > Basic)
+//                      npx wrangler secret put WA_VERIFY_TOKEN -c wrangler.admin.jsonc  (any long random string, also typed into Meta)
 {
   "name": "heirestates-admin",
   "compatibility_date": "2026-10-01",
@@ -29,6 +32,9 @@
     // a verified sender on heirestates.com in Resend
     "MAIL_FROM": "Heir Estates <no-reply@heirestates.com>",
     // Cloudflare dashboard > the account's overview (right-hand column)
-    "CF_ACCOUNT_ID": "3c6f10a996d25fa8c2e7d4408d26439c"
+    "CF_ACCOUNT_ID": "3c6f10a996d25fa8c2e7d4408d26439c",
+    // Meta app > WhatsApp > API Setup: the business number's "Phone number ID" (not the number itself)
+    "WA_PHONE_NUMBER_ID": "",
+    "WA_GRAPH_VERSION": "v23.0"
   }
 }

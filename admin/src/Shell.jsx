@@ -2,7 +2,7 @@
 // a navy rail whose active pill springs between items on desktop; on phones, a tab bar whose active
 // tab grows into a labelled pill, with everything else under More, a bottom sheet the page eases
 // back behind. Each page rises in on navigation.
-import { Building2, Download, Inbox, LayoutDashboard, LogOut, Menu, Receipt, Settings, Users } from "lucide-react";
+import { Building2, Download, Inbox, LayoutDashboard, LogOut, Menu, MessageCircle, Receipt, Settings, Users } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
@@ -15,6 +15,7 @@ import { spring, Toaster } from "./motion";
 export const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, tab: true },
   { to: "/leads", label: "Leads", icon: Inbox, tab: true },
+  { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, tab: true },
   { to: "/listings", label: "Listings", icon: Building2, tab: true },
   { to: "/commissions", label: "Commissions", icon: Receipt },
   { to: "/users", label: "Users", icon: Users },

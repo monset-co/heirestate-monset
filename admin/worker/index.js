@@ -3,14 +3,17 @@
 //   /api/second-factor/send, /verify   the emailed code that is sign-in's second step
 //   /api/invite                        an invitation email for a user added on the Users page
 //   /api/visits?days=7|30|90           site visits from Cloudflare Web Analytics
+//   /api/whatsapp/webhook              Meta's WhatsApp messages and statuses (signed, no sign-in)
+//   /api/whatsapp/send, /media/:id     a reply from the admin, a photo or file they sent
 //   scheduled (every 15 minutes)       emails reminders that have come due
 //   PublicApi.inquiry()                saves an inquiry from the public sites and alerts its agent
-// Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN (wrangler secret put). The rest is in
+// Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN (wrangler secret put). The rest is in
 // wrangler.admin.jsonc's vars.
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { db, whoIs } from "./supabase.js";
 import { mail } from "./mail.js";
 import { newCode, hash, check, canSend, TTL, TRIES } from "./code.js";
+import * as whatsapp from "./whatsapp.js";
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 const fail = (error, status = 400) => json({ error }, status);
@@ -157,6 +160,15 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (!url.pathname.startsWith("/api/")) return env.ASSETS.fetch(req);
+    // Meta, not an admin: checked by its signature instead
+    if (url.pathname === "/api/whatsapp/webhook") {
+      try {
+        return await whatsapp.webhook(req, env);
+      } catch (e) {
+        console.error("whatsapp webhook", e);
+        return new Response("error", { status: 500 }); // Meta tries again later
+      }
+    }
     // changes only from the admin's own pages
     if (req.method !== "GET" && req.headers.get("Origin") !== url.origin) return fail("Not allowed", 403);
     try {
@@ -169,6 +181,9 @@ export default {
       // everything else needs both steps
       if (!me.verified) return fail("Finish signing in with the emailed code", 403);
       if (path === "invite" && req.method === "POST") return await invite(req, env);
+      if (path.startsWith("whatsapp/") && !env.WA_TOKEN) return fail("WhatsApp isn't connected yet (WA_TOKEN)", 501);
+      if (path === "whatsapp/send" && req.method === "POST") return await whatsapp.send(req, env, me);
+      if (path.startsWith("whatsapp/media/") && req.method === "GET") return await whatsapp.media(env, path.slice(15));
       if (path === "visits" && req.method === "GET") {
         const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
         if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return fail("Site visits aren't set up yet (CF_API_TOKEN, CF_ACCOUNT_ID)", 501);

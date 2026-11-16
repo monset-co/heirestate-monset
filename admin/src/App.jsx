@@ -14,6 +14,7 @@ import Commissions from "./pages/Commissions";
 import Report from "./pages/Report";
 import Users from "./pages/Users";
 import Settings from "./pages/Settings";
+import WhatsApp from "./pages/WhatsApp";
 
 const router = createBrowserRouter([
   {
@@ -22,6 +23,8 @@ const router = createBrowserRouter([
       { index: true, element: <Dashboard /> },
       { path: "leads", element: <Leads /> },
       { path: "leads/:id", element: <LeadDetail /> },
+      { path: "whatsapp", element: <WhatsApp /> },
+      { path: "whatsapp/:id", element: <WhatsApp /> },
       { path: "listings", element: <Listings /> },
       { path: "listings/:id", element: <ListingDetail /> },
       { path: "commissions", element: <Commissions /> },

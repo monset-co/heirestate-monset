@@ -18,6 +18,7 @@ export function db(env) {
     return r.status === 204 ? null : r.json();
   };
   return {
+    call,
     get: (path) => call(path),
     insert: (table, row) => call(table, { method: "POST", body: JSON.stringify(row) }),
     upsert: (table, row) => call(table, { method: "POST", body: JSON.stringify(row), headers: { Prefer: "return=representation,resolution=merge-duplicates" } }),
