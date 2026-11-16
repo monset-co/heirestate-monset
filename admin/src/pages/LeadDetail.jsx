@@ -1,4 +1,4 @@
-import { BellRing, ChevronLeft, Mail, MessageCircle, Phone, Pin, PinOff, Trash2 } from "lucide-react";
+import { BellRing, ChevronLeft, Mail, MessageCircle, Phone, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
@@ -7,9 +7,9 @@ import { Badge, Empty, ErrorNote, Field, Tabs, btn, btnDanger, btnGhost, card, i
 import { SITES, STAGES, when } from "../crm";
 import Activity from "./Activity";
 import FilesTab, { FILES } from "./FilesTab";
+import { NOTE, Notes, Pinned } from "./StickyNotes";
 
 const TABS = ["Overview", "Notes", "Files", "Reminders", "Activity"];
-const NOTE = "id, body, author_email, created_at, pinned, color";
 
 // One lead, laid out as the dashboard's client pages are: a header, then tabs kept in the address.
 export default function LeadDetail() {
@@ -176,144 +176,6 @@ function Overview({ lead, onSaved }) {
         </Field>
         <button className={btn} disabled={busy || !dirty}>{busy ? "Saving…" : "Save"}</button>
       </form>
-    </div>
-  );
-}
-
-// Notes are sticky notes: a colour each, and the ones that matter pinned above every tab.
-const COLORS = ["yellow", "pink", "blue", "green"];
-const tilt = (id) => ["-rotate-[1.2deg]", "rotate-[0.8deg]", "-rotate-[0.4deg]", "rotate-[1.4deg]"][id % 4];
-
-function Sticky({ n, children, className = "" }) {
-  return (
-    <div className={`sticky-note sticky-${n.color} ${tilt(n.id)} rounded-sm p-4 text-sm transition-transform duration-200 ease-out hover:rotate-0 ${className}`}>
-      {n.pinned && <span aria-hidden className="sticky-tape" />}
-      {children}
-    </div>
-  );
-}
-
-// the pinned notes, above the tabs on every tab: "OFW in Dubai, call after 9pm", "spouse co-borrows"
-function Pinned({ notes, onOpen }) {
-  const pinned = notes?.filter((n) => n.pinned) ?? [];
-  if (!pinned.length) return null;
-  return (
-    <section aria-label="Pinned notes" className="mt-5 flex gap-4 overflow-x-auto px-1 pt-3 pb-2">
-      {pinned.map((n) => (
-        <button key={n.id} type="button" onClick={onOpen} className="w-56 shrink-0 text-left">
-          <Sticky n={n}>
-            <p className="line-clamp-4 whitespace-pre-wrap">{n.body}</p>
-            <p className="mt-2 text-[0.7rem] opacity-60">{n.author_email?.split("@")[0]} · {when(n.created_at)}</p>
-          </Sticky>
-        </button>
-      ))}
-    </section>
-  );
-}
-
-function Notes({ leadId, notes, setNotes }) {
-  const [draft, setDraft] = useState({ body: "", color: "yellow", pinned: false });
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function add(e) {
-    e.preventDefault();
-    if (!draft.body.trim()) return;
-    setBusy(true);
-    setError("");
-    try {
-      const n = await run(supabase.from("lead_notes").insert({ lead_id: leadId, ...draft, body: draft.body.trim() }).select(NOTE).single());
-      setNotes((ns) => [n, ...ns]);
-      setDraft({ body: "", color: draft.color, pinned: false });
-      toast(n.pinned ? "Pinned to the top of the lead" : "Note added");
-    } catch (err) {
-      setError(err.message);
-    }
-    setBusy(false);
-  }
-
-  async function change(n, patch) {
-    setNotes((ns) => ns.map((x) => (x.id === n.id ? { ...x, ...patch } : x)));
-    try {
-      await run(supabase.from("lead_notes").update(patch).eq("id", n.id));
-    } catch (err) {
-      setNotes((ns) => ns.map((x) => (x.id === n.id ? n : x)));
-      setError(err.message);
-    }
-  }
-
-  async function remove(n) {
-    if (!confirm("Take this note down for good?")) return;
-    try {
-      await run(supabase.from("lead_notes").delete().eq("id", n.id));
-      setNotes((ns) => ns.filter((x) => x.id !== n.id));
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  const sorted = notes && [...notes].sort((a, b) => b.pinned - a.pinned);
-  const tool = "press rounded p-1.5 opacity-60 hover:bg-black/5 hover:opacity-100";
-  return (
-    <div className="grid max-w-5xl gap-6">
-      <ErrorNote error={error} />
-      <ul className="grid gap-6 [grid-template-columns:repeat(auto-fill,minmax(14rem,1fr))]">
-        <li>
-          <form onSubmit={add} className={`sticky-note sticky-${draft.color} grid gap-3 rounded-sm p-4`}>
-            <label>
-              <span className="sr-only">New note</span>
-              <textarea
-                value={draft.body}
-                onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-                rows={5}
-                maxLength={4000}
-                placeholder="What matters about them: who decides, when to call, what they're waiting for…"
-                className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-fg/45"
-              />
-            </label>
-            <div className="flex items-center gap-1.5">
-              {COLORS.map((c) => (
-                <button key={c} type="button" onClick={() => setDraft({ ...draft, color: c })} aria-label={`${c} note`} aria-pressed={draft.color === c} className={`sticky-${c} size-5 rounded-full border border-black/15 ${draft.color === c ? "ring-2 ring-navy ring-offset-1" : ""}`} />
-              ))}
-              <button type="button" onClick={() => setDraft({ ...draft, pinned: !draft.pinned })} aria-pressed={draft.pinned} className={`${tool} ml-auto ${draft.pinned ? "opacity-100" : ""}`} title="Pin to the top of the lead">
-                <Pin className={`size-4 ${draft.pinned ? "fill-current" : ""}`} aria-hidden />
-                <span className="sr-only">Pin</span>
-              </button>
-              <button className="press rounded bg-navy px-3 py-1.5 text-xs font-semibold text-cream disabled:opacity-50" disabled={busy || !draft.body.trim()}>
-                {busy ? "Sticking…" : "Stick it"}
-              </button>
-            </div>
-          </form>
-        </li>
-        {!sorted ? (
-          <li><SkeletonRows n={2} /></li>
-        ) : (
-          <Live>
-            {sorted.map((n, i) => (
-              <LiveLi key={n.id} i={i}>
-                <Sticky n={n} className="flex h-full flex-col">
-                  <p className="flex-1 whitespace-pre-wrap break-words">{n.body}</p>
-                  <p className="mt-3 text-[0.7rem] opacity-60">
-                    {n.author_email?.split("@")[0]} · <time dateTime={n.created_at}>{when(n.created_at)}</time>
-                  </p>
-                  <div className="mt-2 flex items-center gap-1 border-t border-black/10 pt-2">
-                    <button type="button" onClick={() => change(n, { color: COLORS[(COLORS.indexOf(n.color) + 1) % COLORS.length] })} className={tool} aria-label="Change colour">
-                      <span className={`sticky-${COLORS[(COLORS.indexOf(n.color) + 1) % COLORS.length]} block size-4 rounded-full border border-black/20`} />
-                    </button>
-                    <button type="button" onClick={() => change(n, { pinned: !n.pinned })} className={tool} aria-label={n.pinned ? "Unpin" : "Pin to the top of the lead"}>
-                      {n.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-                    </button>
-                    <button type="button" onClick={() => remove(n)} className={`${tool} ml-auto`} aria-label="Delete note">
-                      <Trash2 className="size-4" />
-                    </button>
-                  </div>
-                </Sticky>
-              </LiveLi>
-            ))}
-          </Live>
-        )}
-      </ul>
-      {sorted && !sorted.length && <p className="text-sm text-muted">No notes yet. Pin the ones the whole team should see first.</p>}
     </div>
   );
 }
