@@ -45,7 +45,7 @@ export default function Leads() {
 
   useEffect(() => {
     Promise.all([
-      run(supabase.from("leads").select("id, name, email, mobile, interest, category, looking_to, property_types, areas, budget_max, budget, source_site, stage, temperature, reserved_at, agent_id, created_at, agent:admin_users(name), listing:listings(title)").order("created_at", { ascending: false })),
+      run(supabase.from("leads").select("id, name, email, mobile, interest, category, looking_to, property_types, areas, buildings, budget_max, budget, source_site, stage, temperature, reserved_at, agent_id, created_at, agent:admin_users(name), listing:listings(title)").order("created_at", { ascending: false })),
       run(supabase.from("lead_overview").select("*")),
     ]).then(([leads, overview]) => {
       const o = new Map(overview.map((r) => [r.id, r]));
@@ -62,7 +62,7 @@ export default function Leads() {
         LISTS[listKey][1](l, me) &&
         (!stage || l.stage === stage) &&
         (!site || l.source_site === site) &&
-        (!q || [l.name, l.email, l.mobile, l.interest, l.listing?.title, ...l.property_types, ...l.areas].some((v) => v?.toLowerCase().includes(q)))
+        (!q || [l.name, l.email, l.mobile, l.interest, l.listing?.title, ...l.property_types, ...l.areas, ...l.buildings].some((v) => v?.toLowerCase().includes(q)))
     );
   }, [list, text, stage, site, listKey, me, kind]);
   const set = (k) => (e) => setParams((p) => (e.target.value ? p.set(k, e.target.value) : p.delete(k), p), { replace: true });
@@ -130,7 +130,7 @@ export default function Leads() {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <ErrorNote error={error} />
         <p className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted" aria-label="Legend">
-          What they want: <Chip tone="violet">Type</Chip> <Chip tone="sky">Where</Chip> <Chip tone="gold">Budget</Chip>
+          What they want: <Chip tone="violet">Type</Chip> <Chip tone="sky">Where</Chip> <Chip tone="teal">Building</Chip> <Chip tone="gold">Budget</Chip>
         </p>
       </div>
 
@@ -166,6 +166,7 @@ export default function Leads() {
                       <span className="mt-1 flex flex-wrap items-center gap-1">
                         {l.property_types.slice(0, 2).map((t) => <Chip key={t} tone="violet">{t}</Chip>)}
                         {l.areas.slice(0, 2).map((a) => <Chip key={a} tone="sky">{a}</Chip>)}
+                        {l.buildings.slice(0, 1).map((b) => <Chip key={b} tone="teal">{b}</Chip>)}
                         {l.budget_max ? <Chip tone="gold">≤ ₱{l.budget_max.toLocaleString("en-PH")}</Chip> : null}
                         {!l.property_types.length && !l.areas.length && (l.interest || l.listing?.title) && <span className="truncate text-xs text-muted">{[l.interest, l.listing?.title].filter(Boolean).join(" · ")}</span>}
                       </span>

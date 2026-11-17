@@ -13,6 +13,7 @@ const TONES = {
   navy: "bg-navy/10 text-navy",
   violet: "bg-violet-600/12 text-violet-800",
   sky: "bg-sky-600/12 text-sky-800",
+  teal: "bg-teal-600/12 text-teal-800",
   emerald: "bg-emerald-600/12 text-emerald-800",
   gold: "bg-gold/25 text-gold-ink",
   burgundy: "bg-burgundy/12 text-burgundy",
@@ -25,6 +26,7 @@ const CRITERIA = [
   ["kind", "Type", "violet"],
   ["size", "Size", "violet"],
   ["area", "Where", "sky"],
+  ["building", "Building", "teal"],
   ["near", "Near", "sky"],
   ["furnishing", "Furnishing", "emerald"],
   ["budget", "Budget", "gold"],
@@ -40,7 +42,7 @@ export default function Matches({ lead }) {
   const [priorities, setPriorities] = useState(lead.priorities ?? []);
   const [onlyPrio, setOnlyPrio] = useState(false);
   const statuses = lead.looking_to?.length ? lead.looking_to.flatMap((w) => LOOKING_TO[w] ?? []) : START[lead.category];
-  const key = JSON.stringify([statuses, lead.property_types, lead.areas, lead.furnishings, lead.budget_max, lead.needed_by, lead.near, lead.near_km]);
+  const key = JSON.stringify([statuses, lead.property_types, lead.areas, lead.buildings, lead.furnishings, lead.budget_max, lead.needed_by, lead.near, lead.near_km]);
 
   useEffect(() => {
     if (!statuses.length) return setList([]);

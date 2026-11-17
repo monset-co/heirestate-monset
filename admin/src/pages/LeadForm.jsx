@@ -25,6 +25,7 @@ export default function LeadForm({ lead, onSaved }) {
     looking_to: lead.looking_to?.length ? lead.looking_to : isNew ? START[category] : [],
     property_types: lead.property_types ?? [],
     areas: lead.areas ?? [],
+    buildings: lead.buildings ?? [],
     furnishings: lead.furnishings ?? [],
     budget: lead.budget_max ? peso(lead.budget_max) : "",
     needed_by: lead.needed_by ?? "",
@@ -61,6 +62,7 @@ export default function LeadForm({ lead, onSaved }) {
       looking_to: f.looking_to,
       property_types: f.property_types,
       areas: f.areas,
+      buildings: f.buildings,
       furnishings: f.furnishings,
       budget_max: budget,
       needed_by: f.needed_by || null,
@@ -126,7 +128,11 @@ export default function LeadForm({ lead, onSaved }) {
             {Object.entries(AREAS).map(([g, list]) => (
               <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
             ))}
-            <optgroup label="Buildings">{[...new Set([...buildings, ...f.areas.filter((a) => !Object.values(AREAS).some((g) => a in g))])].map((b) => <option key={b} value={b}>{b}</option>)}</optgroup>
+                    </Select>
+        </Field>
+        <Field label="Building" hint="A condo or development they prefer">
+          <Select multiple value={f.buildings} onChange={set("buildings")} placeholder={buildings.length ? "Any" : "No buildings in the inventory yet"} className={input}>
+            {[...new Set([...buildings, ...f.buildings])].sort((a, b) => a.localeCompare(b)).map((b) => <option key={b} value={b}>{b}</option>)}
           </Select>
         </Field>
         <Field label="Near" hint="A place they want to be close to">

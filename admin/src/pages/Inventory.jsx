@@ -36,7 +36,7 @@ export default function Inventory() {
   const tab = TABS.find((t) => t.id === params.get("tab")) ?? TABS[2];
   const [list, setList] = useState(null);
   const [error, setError] = useState("");
-  const [q, setQ] = useState({ text: "", status: "open", max: "", furnishing: "", when: "", pets: false, where: "", near: "", km: "2" });
+  const [q, setQ] = useState({ text: "", status: "open", max: "", furnishing: "", when: "", pets: false, where: "", building: "", near: "", km: "2" });
   const [view, setView] = useState("table"); // or "map"
   const [open, setOpen] = useState(null); // the row being read or edited; {} for a new one
   const [editing, setEditing] = useState(false);
@@ -69,7 +69,8 @@ export default function Inventory() {
         (q.status === "" ||
           (q.status === "open" ? (r.status.some((s) => OPEN.includes(s)) && r.available !== false) || r.available_from > today : q.status === "both" ? r.status.includes("For Rent") && (r.status.includes("For Sale") || r.status.includes("For Assume")) : r.status.includes(q.status))) &&
         (!q.furnishing || r.furnishing === q.furnishing) &&
-        (!q.where || r.building === q.where || AREA[q.where]?.test(r.location ?? "")) &&
+        (!q.where || AREA[q.where]?.test(r.location ?? "")) &&
+        (!q.building || r.building === q.building) &&
         (!q.near || (distance(r, q.near) ?? Infinity) <= Number(q.km)) &&
         (!q.pets || r.pet_friendly === "yes") &&
         (!q.when || (q.when === "now" ? r.available === true && !(r.available_from > today) : r.available_from > today)) &&
@@ -120,12 +121,15 @@ export default function Inventory() {
         <input aria-label="Highest price" inputMode="numeric" placeholder="Up to ₱ (their budget)" value={q.max} onChange={set("max")} className={`${input} sm:w-48`} />
       </div>
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Select aria-label="Filter by area or building" value={q.where} onChange={set("where")} className={`${input} sm:w-60`}>
+        <Select aria-label="Filter by area" value={q.where} onChange={set("where")} className={`${input} sm:w-60`}>
           <option value="">Anywhere</option>
           {Object.entries(AREAS).map(([g, list]) => (
             <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
           ))}
-          <optgroup label="Buildings">{buildings.map((b) => <option key={b} value={b}>{b}</option>)}</optgroup>
+        </Select>
+        <Select aria-label="Filter by building" value={q.building} onChange={set("building")} className={`${input} sm:w-60`}>
+          <option value="">Any building</option>
+          {buildings.map((b) => <option key={b} value={b}>{b}</option>)}
         </Select>
         <Select aria-label="Filter by furnishing" value={q.furnishing} onChange={set("furnishing")} className={`${input} sm:w-48`}>
           <option value="">Any furnishing</option>
@@ -278,7 +282,7 @@ function PropertyView({ row: r, onEdit }) {
         <p className="text-xs text-muted">Not on the map yet. Edit to find it or drop a pin.</p>
       )}
       <div className="flex flex-wrap gap-1.5">
-        {r.building && <Chip tone="sky">{r.building}</Chip>}
+        {r.building && <Chip tone="teal">{r.building}</Chip>}
         {r.furnishing && <Chip tone="emerald">{r.furnishing}</Chip>}
         <Chip tone={r.available_from > today ? "burgundy" : r.available === false ? "off" : "sky"}>
           {r.available_from > today ? `Free from ${date(r.available_from)}` : r.available === false ? "Not available" : "Available now"}

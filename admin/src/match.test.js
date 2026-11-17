@@ -36,10 +36,11 @@ test("lots aren't houses and lots", () => {
 });
 
 test("a building by the property's Building", () => {
-  const lead = { areas: ["West Jones Residences"] };
-  assert.equal(fit(lead, p({ building: "West Jones Residences", location: "Westjones, Uytengsu St." })).area, true);
-  assert.equal(fit(lead, p({ building: "Casa Mira Towers Mandaue" })).area, false);
-  assert.equal(fit({ areas: ["Lahug"] }, p({ building: "Marco Polo Residences", location: "Nivel Hills, Lahug" })).area, true, "districts still by location");
+  const lead = { buildings: ["West Jones Residences", "Solinea"] };
+  assert.equal(fit(lead, p({ building: "West Jones Residences", location: "Westjones, Uytengsu St." })).building, true);
+  assert.equal(fit(lead, p({ building: "Casa Mira Towers Mandaue" })).building, false);
+  assert.equal(fit(lead, p({})).area, null, "a building isn't a where");
+  assert.equal(fit({ areas: ["Lahug"] }, p({ building: "Marco Polo Residences", location: "Nivel Hills, Lahug" })).area, true, "districts by location");
 });
 
 test("near a landmark, within a radius", () => {

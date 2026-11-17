@@ -28,8 +28,8 @@ export const SIZES = {
 };
 
 // Where: Cebu City's districts, then the other cities. A name matches a property's location
-// when it, or one of its other names, appears in it. Buildings come from the inventory itself
-// (each property's Building), so a new one is a choice as soon as it's in.
+// when it, or one of its other names, appears in it. Buildings are their own wish, listed from
+// the inventory itself (each property's Building), so a new one is a choice as soon as it's in.
 export const AREAS = {
   "Cebu City": {
     "IT Park": /it park|apas|lahug/i,
@@ -60,7 +60,7 @@ export const AREAS = {
 };
 export const AREA = Object.assign({}, ...Object.values(AREAS));
 
-export const WISHES = ["kind", "size", "area", "near", "furnishing", "budget", "when"];
+export const WISHES = ["kind", "size", "area", "building", "near", "furnishing", "budget", "when"];
 
 // Places a client may want to be near, positioned by OpenStreetMap (scripts/inventory_geocode.py
 // --landmarks). Distances are straight-line, as "within 2 km of IT Park" is meant.
@@ -117,8 +117,9 @@ export function fit(lead, p, today = new Date().toISOString().slice(0, 10)) {
     status: statuses.length ? p.status.some((s) => statuses.includes(s)) : null,
     kind: kinds.length ? kinds.some((k) => KINDS[k].test(type)) : null,
     size: sizes.length ? sizes.some((k) => SIZES[k].test(type)) : null,
-    // a district or city by its name in the location; a building by the property's Building
-    area: lead.areas?.length ? lead.areas.some((a) => p.building === a || AREA[a]?.test(p.location ?? "")) : null,
+    area: lead.areas?.length ? lead.areas.some((a) => AREA[a]?.test(p.location ?? "")) : null,
+    // a building they prefer, by the property's Building
+    building: lead.buildings?.length ? lead.buildings.includes(p.building) : null,
     // a property with no position yet can't be shown near; it doesn't count against, it just doesn't count
     near: lead.near && lead.near_km ? (distance(p, lead.near) ?? Infinity) <= lead.near_km : null,
     furnishing: lead.furnishings?.length ? lead.furnishings.includes(p.furnishing) : null,
