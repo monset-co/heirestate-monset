@@ -116,6 +116,40 @@
     }
   }
 
+  /* <Select>'s menu: a popover that grows from the edge of its trigger (above it when flipped),
+     180ms in, 120ms out. Position comes from the component; the UA's centring is undone here. */
+  .menu {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    transform-origin: top left;
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+    transition:
+      opacity 120ms ease,
+      transform 120ms var(--ease-out),
+      overlay 120ms allow-discrete,
+      display 120ms allow-discrete;
+  }
+  .menu[data-side="top"] {
+    transform-origin: bottom left;
+    transform: translateY(4px) scale(0.97);
+  }
+  .menu:popover-open {
+    opacity: 1;
+    transform: none;
+    transition-duration: 180ms;
+    @starting-style {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.97);
+    }
+  }
+  .menu[data-side="top"]:popover-open {
+    @starting-style {
+      transform: translateY(4px) scale(0.97);
+    }
+  }
+
   /* Skeletons shaped like the rows they stand in for */
   .skeleton {
     background: linear-gradient(90deg, var(--color-sunken) 25%, color-mix(in oklab, var(--color-sunken), var(--color-surface) 70%) 37%, var(--color-sunken) 63%);
@@ -217,6 +251,10 @@
   dialog.modal[open],
   .press:active:not(:disabled) {
     transform: none;
+  }
+  /* the menu still fades; it just doesn't move */
+  .menu {
+    transition-property: opacity, overlay, display;
   }
 }
 

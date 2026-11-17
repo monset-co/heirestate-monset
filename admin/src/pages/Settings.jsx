@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useInstall, device } from "../install";
 import { supabase, run } from "../supabase";
 import { Skeleton, toast } from "../motion";
-import { ErrorNote, Field, PageHeader, btn, btnGhost, card, input } from "../ui";
+import { ErrorNote, Field, PageHeader, btn, btnGhost, card, input, Select } from "../ui";
 import { toCsv, download } from "../csv";
 
 const KEYS = ["contract_effective_date", "broker_name", "broker_prc_no", "broker_prc_valid_until", "broker_firm", "default_agent_id"];
@@ -166,10 +166,10 @@ export default function Settings() {
 
         <Section title="Inquiries">
           <Field label="Default agent" hint="Gets new inquiries no one else is assigned to">
-            <select value={s.default_agent_id} onChange={set("default_agent_id")} className={input}>
+            <Select value={s.default_agent_id} onChange={set("default_agent_id")} className={input}>
               <option value="">Not set</option>
               {users.map((u) => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
-            </select>
+            </Select>
           </Field>
         </Section>
 

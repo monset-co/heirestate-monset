@@ -3,8 +3,9 @@ import { useMe } from "../me";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
-import { Live, LiveTr, SkeletonRows } from "../motion";
-import { Badge, Empty, ErrorNote, Modal, PageHeader, Tabs, btn, card, input, th } from "../ui";
+import { motion } from "motion/react";
+import { Live, LiveTr, SkeletonRows, spring } from "../motion";
+import { Badge, Empty, ErrorNote, Modal, PageHeader, Tabs, btn, card, input, th, Select } from "../ui";
 import LeadForm from "./LeadForm";
 import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, STAGES, TEMPS, ago, papersDue, quiet } from "../crm";
 
@@ -82,10 +83,12 @@ export default function Leads() {
               type="button"
               aria-pressed={listKey === k}
               onClick={() => setParams((p) => (k === "open" ? p.delete("list") : p.set("list", k), p), { replace: true })}
-              className={`press inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors duration-150 ${listKey === k ? "border-navy bg-navy text-cream" : "border-line bg-surface text-fg hover:border-muted/50"}`}
+              className={`press relative inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-sm font-medium transition-colors duration-150 ${listKey === k ? "border-navy text-cream" : "border-line bg-surface text-fg hover:border-muted/50"}`}
             >
-              {label}
-              {n > 0 && k !== "all" && <span className={`text-xs tabular-nums ${listKey === k ? "text-cream/70" : "text-muted"}`}>{n}</span>}
+              {/* the navy plate springs from the last list to this one */}
+              {listKey === k && <motion.span layoutId="quick-list" transition={spring} className="absolute -inset-px rounded-full bg-navy" />}
+              <span className="relative">{label}</span>
+              {n > 0 && k !== "all" && <span className={`relative text-xs tabular-nums ${listKey === k ? "text-cream/70" : "text-muted"}`}>{n}</span>}
             </button>
           );
         })}
@@ -97,14 +100,14 @@ export default function Leads() {
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" aria-hidden />
           <input type="search" placeholder="Search name, email, mobile…" value={text} onChange={(e) => setText(e.target.value)} className={`${input} pl-9`} />
         </label>
-        <select aria-label="Filter by stage" value={stage} onChange={set("stage")} className={`${input} sm:w-44`}>
+        <Select aria-label="Filter by stage" value={stage} onChange={set("stage")} className={`${input} sm:w-44`}>
           <option value="">Any stage</option>
           {Object.entries(STAGES).map(([k, s]) => <option key={k} value={k}>{s}</option>)}
-        </select>
-        <select aria-label="Filter by site" value={site} onChange={set("site")} className={`${input} sm:w-48`}>
+        </Select>
+        <Select aria-label="Filter by site" value={site} onChange={set("site")} className={`${input} sm:w-48`}>
           <option value="">Every site</option>
           {Object.entries(SITES).map(([k, s]) => <option key={k} value={k}>{s}</option>)}
-        </select>
+        </Select>
       </div>
 
       <div className="mt-4">

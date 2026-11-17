@@ -7,7 +7,7 @@ import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
 import { supabase, run } from "../supabase";
 import { Skeleton, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, btn, btnDanger, btnGhost, card, input } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, btn, btnDanger, btnGhost, card, input, Select } from "../ui";
 
 const TZ = "Asia/Manila";
 const day = (iso) => new Intl.DateTimeFormat("en-PH", { timeZone: TZ, weekday: "long", month: "long", day: "numeric" }).format(new Date(iso));
@@ -239,9 +239,9 @@ function BookingForm({ value: b, onChange, onDone, disabled }) {
           <input type="datetime-local" value={b.start} onChange={set("start")} required step={900} className={input} />
         </Field>
         <Field label="Length">
-          <select value={b.minutes} onChange={set("minutes")} className={input}>
+          <Select value={b.minutes} onChange={set("minutes")} className={input}>
             {[30, 60, 90, 120, 180, 240].map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? "s" : ""}`}</option>)}
-          </select>
+          </Select>
         </Field>
       </div>
       <Field label="Where">

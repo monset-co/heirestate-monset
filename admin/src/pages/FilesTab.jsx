@@ -5,7 +5,7 @@ import { CircleCheck, CircleDot, CircleX, Circle, Download, FileText, FileImage,
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, SkeletonRows, toast } from "../motion";
-import { Empty, ErrorNote, btnGhost, card, input } from "../ui";
+import { Empty, ErrorNote, btnGhost, card, input, Select } from "../ui";
 import { CHECKLIST, FOLDERS, ON_THE_CLOCK, PAPERS_DAYS, ago, papersDue } from "../crm";
 
 const PdfDeck = lazy(() => import("../PdfDeck"));
@@ -284,9 +284,9 @@ export default function FilesTab({ leadId, lead, onChecked }) {
                         )}
                         <label>
                           <span className="sr-only">Folder for {f.file_name}</span>
-                          <select value={f.folder} onChange={(e) => move(f, e.target.value)} className={`${input} w-auto py-1.5`}>
+                          <Select value={f.folder} onChange={(e) => move(f, e.target.value)} className={`${input} w-auto py-1.5`}>
                             {Object.entries(FOLDERS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                          </select>
+                          </Select>
                         </label>
                         <button type="button" onClick={() => download(f)} className="press rounded-md p-2 text-muted hover:bg-sunken hover:text-fg" aria-label={`Download ${f.file_name}`}>
                           <Download className="size-4" />

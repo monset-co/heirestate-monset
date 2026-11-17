@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase, run } from "../supabase";
 import { toast } from "../motion";
-import { ErrorNote, Field, btn, card, input } from "../ui";
+import { ErrorNote, Field, btn, card, input, Select } from "../ui";
 import { STATUSES, TYPES } from "../../../src/listings/types.js";
 import { shape, check } from "../../../src/listings/rules.js";
 import { order, projects } from "../../../src/projects.js";
@@ -78,16 +78,16 @@ export default function ListingForm({ listing, onSaved }) {
           </Field>
         </div>
         <Field label="Type">
-          <select value={f.type} onChange={set("type")} className={input}>
+          <Select value={f.type} onChange={set("type")} className={input}>
             {Object.entries(TYPES).map(([k, x]) => <option key={k} value={k}>{x.label}</option>)}
-          </select>
+          </Select>
         </Field>
         {t.project ? (
           <Field label="Project" hint={f.type === "rfo_unit" ? "Leave empty for an RFO unit outside these projects" : undefined}>
-            <select value={f.project} onChange={set("project")} required={f.type === "project_unit"} className={input}>
+            <Select value={f.project} onChange={set("project")} required={f.type === "project_unit"} className={input}>
               <option value="">{f.type === "rfo_unit" ? "None" : "Choose a project"}</option>
               {order.map((id) => <option key={id} value={id}>{projects[id].name}</option>)}
-            </select>
+            </Select>
           </Field>
         ) : (
           <div className="hidden sm:block" />
@@ -122,15 +122,15 @@ export default function ListingForm({ listing, onSaved }) {
 
       <Section title="Status and publishing">
         <Field label="Status">
-          <select value={f.status} onChange={set("status")} className={input}>
+          <Select value={f.status} onChange={set("status")} className={input}>
             {Object.entries(STATUSES).map(([k, s]) => <option key={k} value={k}>{s}</option>)}
-          </select>
+          </Select>
         </Field>
         <Field label="Agent" hint="Shown on the listing page; gets its inquiries">
-          <select value={f.agent_id} onChange={set("agent_id")} className={input}>
+          <Select value={f.agent_id} onChange={set("agent_id")} className={input}>
             <option value="">None</option>
             {users.map((u) => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
-          </select>
+          </Select>
         </Field>
         {t.project ? (
           <Field label="DHSUD License to Sell no.">

@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { supabase, run } from "../supabase";
 import { toast } from "../motion";
-import { ErrorNote, Field, btn, input } from "../ui";
+import { ErrorNote, Field, btn, input, Select } from "../ui";
 import { CATEGORIES, SOURCES } from "../crm";
 
 const TEXT = { name: 100, mobile: 40, email: 254, interest: 120, property_type: 200, location: 300, budget: 80, furnishing: 200, target_date: 120, message: 2000 };
@@ -48,15 +48,15 @@ export default function LeadForm({ lead, onSaved }) {
       <ErrorNote error={error} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Kind">
-          <select value={f.category} onChange={set("category")} className={input}>
+          <Select value={f.category} onChange={set("category")} className={input}>
             {Object.entries(CATEGORIES).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
-          </select>
+          </Select>
         </Field>
         {handAdded && (
           <Field label="Came from">
-            <select value={f.source_site} onChange={set("source_site")} className={input}>
+            <Select value={f.source_site} onChange={set("source_site")} className={input}>
               {Object.entries(SOURCES).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
-            </select>
+            </Select>
           </Field>
         )}
         <Field label="Name">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
+import { MotionConfig } from "motion/react";
 import { supabase, run, SETTING_PASSWORD } from "./supabase";
 import { api } from "./api";
 import { Me } from "./me";
@@ -77,7 +78,10 @@ export default function App() {
   if (!me) return <SecondStep email={session.user.email} onDone={lookUp} />;
   return (
     <Me.Provider value={me}>
-      <RouterProvider router={router} />
+      {/* "reduce motion" on the device: Motion's springs and slides become fades */}
+      <MotionConfig reducedMotion="user">
+        <RouterProvider router={router} />
+      </MotionConfig>
     </Me.Provider>
   );
 }

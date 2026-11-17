@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, Tabs, btn, btnDanger, btnGhost, card, input, th } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, Tabs, btn, btnDanger, btnGhost, card, input, th, Select } from "../ui";
 
 const STATUSES = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
 const TABS = [
@@ -27,7 +27,7 @@ export default function Inventory() {
   const tab = TABS.find((t) => t.id === params.get("tab")) ?? TABS[2];
   const [list, setList] = useState(null);
   const [error, setError] = useState("");
-  const [q, setQ] = useState({ text: "", status: "open", max: "" });
+  const [q, setQ] = useState({ text: "", status: "open", max: "", furnishing: "", when: "", pets: false });
   const [open, setOpen] = useState(null); // the row being read or edited; {} for a new one
 
   useEffect(() => {
@@ -39,13 +39,20 @@ export default function Inventory() {
   const shown = useMemo(() => {
     const words = q.text.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const max = Number(q.max.replace(/\D/g, "")) || 0;
-    return (list ?? []).filter(
+    const today = new Date().toISOString().slice(0, 10);
+    const rows = (list ?? []).filter(
       (r) =>
         inTab(tab, r) &&
-        (q.status === "" || (q.status === "open" ? r.status.some((s) => OPEN.includes(s)) && r.available !== false : r.status.includes(q.status))) &&
+        (q.status === "" ||
+          (q.status === "open" ? (r.status.some((s) => OPEN.includes(s)) && r.available !== false) || r.available_from > today : q.status === "both" ? r.status.includes("For Rent") && (r.status.includes("For Sale") || r.status.includes("For Assume")) : r.status.includes(q.status))) &&
+        (!q.furnishing || r.furnishing === q.furnishing) &&
+        (!q.pets || r.pet_friendly === "yes") &&
+        (!q.when || (q.when === "now" ? r.available === true && !(r.available_from > today) : r.available_from > today)) &&
         (!max || (r.price != null && r.price <= max)) &&
         words.every((w) => [r.type, r.location, r.source, r.specs, r.furnishing, r.rph_code, r.fh_code, r.price_text].join(" ").toLowerCase().includes(w))
     );
+    // coming up: soonest first
+    return q.when === "later" ? rows.sort((a, b) => a.available_from.localeCompare(b.available_from)) : rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, q, tab.id]);
   const set = (k) => (e) => setQ({ ...q, [k]: e.target.value });
@@ -78,19 +85,35 @@ export default function Inventory() {
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" aria-hidden />
           <input type="search" placeholder="Search place, type, owner, code…" value={q.text} onChange={set("text")} className={`${input} pl-9`} />
         </label>
-        <select aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${input} sm:w-48`}>
+        <Select aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${input} sm:w-48`}>
           <option value="open">Still available</option>
           <option value="">Every status</option>
+          <option value="both">For rent and for sale</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
+        </Select>
         <input aria-label="Highest price" inputMode="numeric" placeholder="Up to ₱ (their budget)" value={q.max} onChange={set("max")} className={`${input} sm:w-48`} />
+      </div>
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Select aria-label="Filter by furnishing" value={q.furnishing} onChange={set("furnishing")} className={`${input} sm:w-48`}>
+          <option value="">Any furnishing</option>
+          {FURNISHING.slice(1).map((o) => <option key={o} value={o}>{o}</option>)}
+        </Select>
+        <Select aria-label="Filter by when it's free" value={q.when} onChange={set("when")} className={`${input} sm:w-56`}>
+          <option value="">Free any time</option>
+          <option value="now">Available now</option>
+          <option value="later">To be available (has a date)</option>
+        </Select>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={q.pets} onChange={(e) => setQ({ ...q, pets: e.target.checked })} className="size-4 accent-navy" /> Pet-friendly only
+        </label>
       </div>
 
       <div className="mt-4">
         <ErrorNote error={error} />
       </div>
 
-      <div className={`${card} mt-4 overflow-x-auto`}>
+      {/* keyed by tab: a new tab's rows fade in rather than snap */}
+      <div key={tab.id} className={`${card} mt-4 overflow-x-auto animate-[fade-in_160ms_ease-out]`}>
         {!list ? (
           <SkeletonRows />
         ) : !shown.length ? (
@@ -120,6 +143,7 @@ export default function Inventory() {
                     <span className="flex flex-wrap gap-1">
                       {r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>)}
                       {r.available_from && <Badge value="draft">From {date(r.available_from)}</Badge>}
+                      {r.pet_friendly === "yes" && <Badge value="draft">Pets OK</Badge>}
                     </span>
                   </td>
                 </tr>
@@ -137,7 +161,7 @@ export default function Inventory() {
   );
 }
 
-const FURNISHING = ["", "Fully furnished", "Semi-furnished", "Furnished", "Unfurnished"];
+const FURNISHING = ["", "Fully furnished", "Semi-furnished", "Furnished", "Finished", "Unfurnished"];
 const TEXT = ["type", "location", "price_text", "price_note", "furnishing", "specs", "inclusions", "payment_terms", "notes", "summary", "source", "source_url", "fb_post_note", "fb_post_url", "rph_code", "rph_url", "fh_code", "fh_url", "available_from", "fb_posted_on"];
 
 function PropertyForm({ row, onSaved }) {
@@ -242,21 +266,21 @@ function PropertyForm({ row, onSaved }) {
       </Field>
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Available now">
-          <select value={f.available} onChange={set("available")} className={input}>
+          <Select value={f.available} onChange={set("available")} className={input}>
             <option value="">Not known</option>
             <option value="true">Yes</option>
             <option value="false">No</option>
-          </select>
+          </Select>
         </Field>
         <Field label="Available from">
           <input type="date" value={f.available_from} onChange={set("available_from")} className={input} />
         </Field>
         <Field label="Furnishing">
-          <select value={f.furnishing} onChange={set("furnishing")} className={input}>
+          <Select value={f.furnishing} onChange={set("furnishing")} className={input}>
             {(FURNISHING.includes(f.furnishing) ? FURNISHING : [...FURNISHING, f.furnishing]).map((o) => (
               <option key={o} value={o}>{o || "Not set"}</option>
             ))}
-          </select>
+          </Select>
         </Field>
       </div>
       {area("specs", "Specs")}
@@ -264,11 +288,11 @@ function PropertyForm({ row, onSaved }) {
       {area("payment_terms", "Payment terms", 2, 2000)}
       {area("notes", "Amenities and other notes", 3, 8000)}
       <Field label="Pet-friendly">
-        <select value={f.pet_friendly} onChange={set("pet_friendly")} className={input}>
+        <Select value={f.pet_friendly} onChange={set("pet_friendly")} className={input}>
           <option value="unconfirmed">Not confirmed</option>
           <option value="yes">Yes</option>
           <option value="no">No</option>
-        </select>
+        </Select>
       </Field>
       <div>
         {area("summary", "Summary for posts", 4)}

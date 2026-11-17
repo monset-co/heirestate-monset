@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { supabase, run } from "../supabase";
 import { Live, LiveTr, SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, btn, btnGhost, card, input, th } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, btn, btnGhost, card, input, th, Select } from "../ui";
 import { order, projects } from "../../../src/projects.js";
 
 export const MODES = { full_cash: "Full cash", bank_financing: "Bank financing", installment: "Installment" };
@@ -182,7 +182,7 @@ function CommissionForm({ row, onSaved, onAnother }) {
       </Field>
       <div className="sm:col-span-2">
         <Field label="Project or listing">
-          <select required value={f.where} onChange={set("where")} className={input}>
+          <Select required value={f.where} onChange={set("where")} className={input}>
             <option value="">Choose…</option>
             <optgroup label="Projects">
               {order.map((id) => <option key={id} value={`project:${id}`}>{projects[id].name}</option>)}
@@ -192,13 +192,13 @@ function CommissionForm({ row, onSaved, onAnother }) {
                 {listings.map((l) => <option key={l.id} value={`listing:${l.id}`}>{l.title}</option>)}
               </optgroup>
             )}
-          </select>
+          </Select>
         </Field>
       </div>
       <Field label="Payment mode">
-        <select value={f.payment_mode} onChange={set("payment_mode")} className={input}>
+        <Select value={f.payment_mode} onChange={set("payment_mode")} className={input}>
           {Object.entries(MODES).map(([k, m]) => <option key={k} value={k}>{m}</option>)}
-        </select>
+        </Select>
       </Field>
       <label className="flex items-center gap-3 self-end py-2 text-sm text-fg">
         <input type="checkbox" checked={f.via_sites} onChange={set("via_sites")} className="size-4 accent-navy" />
@@ -214,10 +214,10 @@ function CommissionForm({ row, onSaved, onAnother }) {
           <input inputMode="decimal" pattern="\d+(\.\d{1,2})?" value={f.gross} onChange={set("gross")} className={`${input} tabular-nums`} />
         </Field>
         <Field label="Release">
-          <select value={f.release} onChange={set("release")} className={input}>
+          <Select value={f.release} onChange={set("release")} className={input}>
             <option value="">Full</option>
             <option value="partial">Partial</option>
-          </select>
+          </Select>
         </Field>
       </fieldset>
 

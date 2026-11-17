@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, Tabs, btn, btnDanger, btnGhost, card, input } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, Tabs, btn, btnDanger, btnGhost, card, input, Select } from "../ui";
 import LeadForm from "./LeadForm";
 import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, TEMPS, ago, papersDue, quiet, when } from "../crm";
 import Activity from "./Activity";
@@ -255,9 +255,9 @@ function Overview({ lead, onSaved }) {
         <h2 className="font-display text-xl text-ink">The deal</h2>
         <ErrorNote error={error} />
         <Field label="Stage">
-          <select value={deal.stage} onChange={(e) => setDeal({ ...deal, stage: e.target.value })} className={input}>
+          <Select value={deal.stage} onChange={(e) => setDeal({ ...deal, stage: e.target.value })} className={input}>
             {Object.entries(STAGES).map(([k, s]) => <option key={k} value={k}>{s}</option>)}
-          </select>
+          </Select>
         </Field>
         {deal.stage === "lost" && (
           <Field label="Why it was lost">
@@ -265,10 +265,10 @@ function Overview({ lead, onSaved }) {
           </Field>
         )}
         <Field label="Agent">
-          <select value={deal.agent_id} onChange={(e) => setDeal({ ...deal, agent_id: e.target.value })} className={input}>
+          <Select value={deal.agent_id} onChange={(e) => setDeal({ ...deal, agent_id: e.target.value })} className={input}>
             <option value="">No one yet</option>
             {users.map((u) => <option key={u.id} value={String(u.id)}>{u.name}</option>)}
-          </select>
+          </Select>
         </Field>
         <button className={btn} disabled={busy || !dirty}>{busy ? "Saving…" : "Save"}</button>
       </form>

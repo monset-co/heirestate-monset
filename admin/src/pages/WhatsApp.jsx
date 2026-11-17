@@ -8,7 +8,7 @@ import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { SkeletonRows, toast } from "../motion";
 import { saveFile } from "./FilesTab";
-import { Empty, ErrorNote, btn, card, input } from "../ui";
+import { Empty, ErrorNote, btn, card, input, Select } from "../ui";
 import { TEMPLATES, ago, when } from "../crm";
 
 export const THREAD = "id, wa_id, name, lead_id, unread, last_message_at, last_inbound_at, lead:leads(id, name)";
@@ -298,9 +298,9 @@ function Templates({ thread }) {
       <div className="flex flex-wrap items-end gap-2">
         <label className="grid gap-1">
           <span className="label text-ink">Template</span>
-          <select value={pick.name} onChange={(e) => setPick(TEMPLATES.find((t) => t.name === e.target.value))} className={`${input} w-52 py-1.5`}>
+          <Select value={pick.name} onChange={(e) => setPick(TEMPLATES.find((t) => t.name === e.target.value))} className={`${input} w-52 py-1.5`}>
             {TEMPLATES.map((t) => <option key={t.name} value={t.name}>{t.label}</option>)}
-          </select>
+          </Select>
         </label>
         <button type="button" disabled title="Templates send once they're approved in Meta and WhatsApp is connected" className={btn}>
           <Send className="size-4" aria-hidden /> Send template

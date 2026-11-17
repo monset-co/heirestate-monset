@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { supabase, run, PHOTOS } from "../supabase";
 import { Live, LiveTr, SkeletonRows } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, btn, card, input, th } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, btn, card, input, th, Select } from "../ui";
 import { STATUSES, TYPES, price } from "../../../src/listings/types.js";
 import { shape, check } from "../../../src/listings/rules.js";
 import { order, projects } from "../../../src/projects.js";
@@ -54,19 +54,19 @@ export default function Listings() {
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" aria-hidden />
           <input type="search" placeholder="Search title, location…" value={q.text} onChange={set("text")} className={`${input} pl-9`} />
         </label>
-        <select aria-label="Filter by type" value={q.type} onChange={set("type")} className={`${input} sm:w-44`}>
+        <Select aria-label="Filter by type" value={q.type} onChange={set("type")} className={`${input} sm:w-44`}>
           <option value="">Every type</option>
           {Object.entries(TYPES).map(([k, t]) => (
             <option key={k} value={k}>{t.label}</option>
           ))}
-        </select>
-        <select aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${input} sm:w-44`}>
+        </Select>
+        <Select aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${input} sm:w-44`}>
           <option value="">Every status</option>
           <option value="draft">Not published</option>
           {Object.entries(STATUSES).map(([k, s]) => (
             <option key={k} value={k}>{s}</option>
           ))}
-        </select>
+        </Select>
       </div>
 
       <div className="mt-4">
@@ -163,20 +163,20 @@ function NewListing({ onSaved }) {
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Type">
-          <select value={f.type} onChange={set("type")} className={input}>
+          <Select value={f.type} onChange={set("type")} className={input}>
             {Object.entries(TYPES).map(([k, x]) => (
               <option key={k} value={k}>{x.label}</option>
             ))}
-          </select>
+          </Select>
         </Field>
         {t.project && (
           <Field label="Project">
-            <select value={f.project} onChange={set("project")} required={f.type === "project_unit"} className={input}>
+            <Select value={f.project} onChange={set("project")} required={f.type === "project_unit"} className={input}>
               <option value="">{f.type === "rfo_unit" ? "None" : "Choose a project"}</option>
               {order.map((id) => (
                 <option key={id} value={id}>{projects[id].name}</option>
               ))}
-            </select>
+            </Select>
           </Field>
         )}
       </div>
