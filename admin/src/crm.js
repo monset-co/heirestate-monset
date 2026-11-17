@@ -3,7 +3,10 @@ import { order, projects } from "../../src/projects.js";
 
 export const STAGES = { new: "New", contacted: "Contacted", viewing: "Viewing", reserved: "Reserved", closed: "Closed", lost: "Lost" };
 export const OPEN = ["new", "contacted", "viewing", "reserved"];
-export const SITES = { main: "heirestates.com", ...Object.fromEntries(order.map((id) => [id, projects[id].name])), whatsapp: "WhatsApp" };
+// where a lead came from: a site's form, or (added by hand) one of SOURCES
+export const SOURCES = { whatsapp: "WhatsApp", rph: "Rent.ph", fh: "Filipino Homes", facebook: "Facebook", referral: "Referral", "walk-in": "Walk-in", other: "Other" };
+export const SITES = { main: "heirestates.com", ...Object.fromEntries(order.map((id) => [id, projects[id].name])), ...SOURCES };
+export const CATEGORIES = { "pre-selling": "Pre-selling", rentals: "Rentals", brokerage: "Brokerage" };
 export const TEMPS = { hot: "Hot", warm: "Warm", cold: "Cold" };
 export const QUIET_DAYS = 7; // an open lead with no contact this long has gone quiet
 

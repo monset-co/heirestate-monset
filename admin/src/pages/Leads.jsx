@@ -1,11 +1,12 @@
-import { ChevronRight, Search } from "lucide-react";
+import { ChevronRight, Plus, Search } from "lucide-react";
 import { useMe } from "../me";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { Live, LiveTr, SkeletonRows } from "../motion";
-import { Badge, Empty, ErrorNote, PageHeader, card, input, th } from "../ui";
-import { ON_THE_CLOCK, OPEN, SITES, STAGES, TEMPS, ago, papersDue, quiet } from "../crm";
+import { Badge, Empty, ErrorNote, Modal, PageHeader, Tabs, btn, card, input, th } from "../ui";
+import LeadForm from "./LeadForm";
+import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, STAGES, TEMPS, ago, papersDue, quiet } from "../crm";
 
 // Quick lists, the saved views a CRM keeps: each one a question an agent asks every morning.
 const LISTS = {
@@ -28,10 +29,12 @@ export default function Leads() {
   const stage = params.get("stage") ?? "";
   const listKey = LISTS[params.get("list")] ? params.get("list") : "open";
   const site = params.get("site") ?? "";
+  const kind = CATEGORIES[params.get("kind")] ? params.get("kind") : "pre-selling";
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     Promise.all([
-      run(supabase.from("leads").select("id, name, email, mobile, interest, source_site, stage, temperature, reserved_at, agent_id, created_at, agent:admin_users(name), listing:listings(title)").order("created_at", { ascending: false })),
+      run(supabase.from("leads").select("id, name, email, mobile, interest, category, property_type, location, budget, source_site, stage, temperature, reserved_at, agent_id, created_at, agent:admin_users(name), listing:listings(title)").order("created_at", { ascending: false })),
       run(supabase.from("lead_overview").select("*")),
     ]).then(([leads, overview]) => {
       const o = new Map(overview.map((r) => [r.id, r]));
@@ -44,21 +47,35 @@ export default function Leads() {
     const q = text.trim().toLowerCase();
     return (list ?? []).filter(
       (l) =>
+        l.category === kind &&
         LISTS[listKey][1](l, me) &&
         (!stage || l.stage === stage) &&
         (!site || l.source_site === site) &&
-        (!q || [l.name, l.email, l.mobile, l.interest, l.listing?.title].some((v) => v?.toLowerCase().includes(q)))
+        (!q || [l.name, l.email, l.mobile, l.interest, l.property_type, l.location, l.listing?.title].some((v) => v?.toLowerCase().includes(q)))
     );
-  }, [list, text, stage, site, listKey, me]);
+  }, [list, text, stage, site, listKey, me, kind]);
   const set = (k) => (e) => setParams((p) => (e.target.value ? p.set(k, e.target.value) : p.delete(k), p), { replace: true });
 
   return (
     <>
-      <PageHeader title="Leads" sub="Every inquiry and viewing request from the six sites. Each one is emailed to its agent the moment it arrives." />
+      <PageHeader title="Leads" sub="Every inquiry: from the sites' forms (each emailed to its agent the moment it arrives), and the ones you add by hand.">
+        <button className={btn} onClick={() => setAdding(true)}>
+          <Plus className="size-4" aria-hidden /> Add lead
+        </button>
+      </PageHeader>
 
-      <div role="group" aria-label="Quick lists" className="mt-6 flex gap-2 overflow-x-auto pb-1">
+      <div className="mt-6">
+        <Tabs
+          label="Kind of lead"
+          items={Object.entries(CATEGORIES).map(([id, t]) => ({ id, title: list ? `${t} ${list.filter((l) => l.category === id && OPEN.includes(l.stage)).length}` : t }))}
+          value={kind}
+          onChange={(k) => setParams((p) => (p.set("kind", k), p), { replace: true })}
+        />
+      </div>
+
+      <div role="group" aria-label="Quick lists" className="mt-4 flex gap-2 overflow-x-auto pb-1">
         {Object.entries(LISTS).map(([k, [label, test]]) => {
-          const n = list?.filter((l) => test(l, me)).length;
+          const n = list?.filter((l) => l.category === kind && test(l, me)).length;
           return (
             <button
               key={k}
@@ -122,7 +139,7 @@ export default function Leads() {
                         </Link>
                         {l.temperature && <Badge value={l.temperature}>{TEMPS[l.temperature]}</Badge>}
                       </span>
-                      <p className="truncate text-xs text-muted">{[l.interest, l.listing?.title].filter(Boolean).join(" · ")}</p>
+                      <p className="truncate text-xs text-muted">{[l.interest, l.property_type, l.location, l.listing?.title, l.budget].filter(Boolean).join(" · ")}</p>
                     </td>
                     <td className="hidden px-4 py-3 whitespace-nowrap text-muted md:table-cell">{SITES[l.source_site] ?? l.source_site}</td>
                     <td className="hidden px-4 py-3 whitespace-nowrap text-muted lg:table-cell">{l.agent?.name ?? "—"}</td>
@@ -156,6 +173,10 @@ export default function Leads() {
           </table>
         )}
       </div>
+
+      <Modal open={adding} onClose={() => setAdding(false)} title="Add lead">
+        {adding && <LeadForm lead={{ category: kind }} onSaved={(l) => navigate(`/leads/${l.id}`)} />}
+      </Modal>
     </>
   );
 }

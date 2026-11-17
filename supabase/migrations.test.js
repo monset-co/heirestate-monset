@@ -183,6 +183,12 @@ assert.equal((await gate("nobody@example.com")).error.http_code, 403);
 await admin("insert into settings (key, value) values ('broker_prc_valid_until', '2028-03-31')");
 assert.equal((await anon("select public_listing('corner-lot') j"))[0].j.broker.valid_until, "2028-03-31");
 
+// a lead is the kind its listing is (the corner lot: brokerage); one added by hand keeps its own
+const [lot] = await admin("select id from listings where slug = 'corner-lot'");
+assert.equal((await admin("insert into leads (source_site, listing_id, name, mobile) values ('main', $1, 'Ana Cruz', '0917') returning category", [lot.id]))[0].category, "brokerage");
+assert.equal((await admin("insert into leads (source_site, category, name, mobile) values ('rph', 'rentals', 'Ben Lim', '0918') returning category"))[0].category, "rentals");
+await fails(() => admin("insert into leads (source_site, category, name, mobile) values ('rph', 'resale', 'Ben Lim', '0918')"), /check constraint/);
+
 // inventory: admins only, statuses from the fixed set
 await admin("insert into inventory (status, location, price) values ('{For Rent}', 'IT Park', 25000)");
 assert.equal((await stranger("select count(*)::int n from inventory"))[0].n, 0);

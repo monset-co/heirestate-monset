@@ -66,7 +66,7 @@ export default function Inventory() {
       <div className="mt-6">
         <Tabs
           label="Kind of property"
-          items={TABS.map((t) => ({ id: t.id, label: list ? `${t.label} ${list.filter((r) => inTab(t, r)).length}` : t.label }))}
+          items={TABS.map((t) => ({ id: t.id, title: list ? `${t.label} ${list.filter((r) => inTab(t, r)).length}` : t.label }))}
           value={tab.id}
           onChange={(id) => setParams({ tab: id }, { replace: true })}
         />

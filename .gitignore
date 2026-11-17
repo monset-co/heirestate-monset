@@ -12,3 +12,4 @@ resources/
 # client spreadsheets and their imports hold owners' and buyers' details
 *.xlsx
 inventory-import.sql
+leads-import.sql

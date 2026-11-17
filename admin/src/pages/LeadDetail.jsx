@@ -1,10 +1,11 @@
-import { BellRing, ChevronLeft, Mail, MessageCircle, Phone, Trash2 } from "lucide-react";
+import { BellRing, ChevronLeft, Mail, MessageCircle, Pencil, Phone, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Tabs, btn, btnDanger, btnGhost, card, input } from "../ui";
-import { ON_THE_CLOCK, OPEN, SITES, STAGES, TEMPS, ago, papersDue, quiet, when } from "../crm";
+import { Badge, Empty, ErrorNote, Field, Modal, Tabs, btn, btnDanger, btnGhost, card, input } from "../ui";
+import LeadForm from "./LeadForm";
+import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, TEMPS, ago, papersDue, quiet, when } from "../crm";
 import Activity from "./Activity";
 import FilesTab, { FILES } from "./FilesTab";
 import { NOTE, Notes, Pinned } from "./StickyNotes";
@@ -22,6 +23,7 @@ export default function LeadDetail() {
   const [overview, setOverview] = useState(null); // last contact, next step, papers verified (lead_overview)
   const [notes, setNotes] = useState(null); // shared by the pinned stickies up top and the Notes tab
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState(false);
   const tab = TABS.includes(params.get("tab")) ? params.get("tab") : "Overview";
 
   useEffect(() => {
@@ -71,12 +73,15 @@ export default function LeadDetail() {
         <h1 className="font-display text-[2.1rem] leading-tight tracking-[-0.01em] text-ink">{lead.name}</h1>
         <Badge value={lead.stage}>{STAGES[lead.stage]}</Badge>
         <Temperature lead={lead} onSaved={(temperature) => setLead({ ...lead, temperature })} />
-        <button className={`${btnDanger} ml-auto`} onClick={remove}>
+        <button className={`${btnGhost} ml-auto`} onClick={() => setEditing(true)}>
+          <Pencil className="size-4" aria-hidden /> Edit details
+        </button>
+        <button className={btnDanger} onClick={remove}>
           <Trash2 className="size-4" aria-hidden /> Delete on request
         </button>
       </div>
       <p className="mt-1 text-sm text-muted">
-        {[lead.interest, SITES[lead.source_site] ?? lead.source_site, when(lead.created_at)].filter(Boolean).join(" · ")}
+        {[CATEGORIES[lead.category], lead.interest, SITES[lead.source_site] ?? lead.source_site, when(lead.created_at)].filter(Boolean).join(" · ")}
       </p>
       <FollowUp lead={lead} o={overview} onTab={(t) => setParams({ tab: t }, { replace: true })} />
       <div className="mt-3">
@@ -96,6 +101,18 @@ export default function LeadDetail() {
         {tab === "Reminders" && <Reminders lead={lead} />}
         {tab === "Activity" && <Activity lead={lead.id} />}
       </div>
+
+      <Modal open={editing} onClose={() => setEditing(false)} title={`Edit ${lead.name}`}>
+        {editing && (
+          <LeadForm
+            lead={lead}
+            onSaved={(row) => {
+              setLead({ ...lead, ...row });
+              setEditing(false);
+            }}
+          />
+        )}
+      </Modal>
     </>
   );
 }
@@ -209,18 +226,22 @@ function Overview({ lead, onSaved }) {
   const rows = [
     ["Mobile", <a key="tel" href={`tel:${lead.mobile.replace(/[^\d+]/g, "")}`} className="inline-flex items-center gap-1.5 underline underline-offset-2"><Phone className="size-3.5" aria-hidden />{lead.mobile}</a>],
     ["Email", lead.email && <a key="mail" href={`mailto:${lead.email}`} className="inline-flex items-center gap-1.5 break-all underline underline-offset-2"><Mail className="size-3.5 shrink-0" aria-hidden />{lead.email}</a>],
-    ["Interested in", lead.interest],
+    ["Looking to", lead.interest],
+    ["Property type", lead.property_type],
+    ["Where", lead.location],
+    ["Furnishing", lead.furnishing],
+    ["When", lead.target_date],
     ["Listing", lead.listing && <Link key="l" to={`/listings/${lead.listing.id}`} className="underline underline-offset-2">{lead.listing.title}</Link>],
     ["Budget", lead.budget],
     ["Preferred viewing", <span key="v">{lead.viewing_time && <>{lead.viewing_time}<br /></>}<Link to={`/calendar?lead=${lead.id}`} className="underline underline-offset-2">Book a viewing</Link></span>],
     ["From", SITES[lead.source_site] ?? lead.source_site],
-    ["Consent given", lead.consent_at ? when(lead.consent_at) : lead.source_site === "whatsapp" && "Wrote to us on WhatsApp; no website form"],
+    ["Consent given", lead.consent_at ? when(lead.consent_at) : SOURCES[lead.source_site] && `Came through ${SOURCES[lead.source_site]}; no website form`],
   ];
   return (
     <div className="stagger grid max-w-5xl gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
       <div className={card}>
         <dl className="divide-y divide-line text-sm">
-          {rows.map(([k, v]) => (
+          {rows.filter(([k, v]) => v || !["Property type", "Where", "Furnishing", "When"].includes(k)).map(([k, v]) => (
             <div key={k} className="grid grid-cols-3 gap-4 px-4 py-3">
               <dt className="text-muted">{k}</dt>
               <dd className="col-span-2 break-words text-fg">{v || "—"}</dd>
