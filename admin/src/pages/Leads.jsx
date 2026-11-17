@@ -5,7 +5,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { motion } from "motion/react";
 import { Live, LiveTr, SkeletonRows, spring } from "../motion";
-import { Badge, Empty, ErrorNote, Modal, PageHeader, Tabs, btn, card, input, th, Select } from "../ui";
+import { Badge, Empty, ErrorNote, Modal, PageHeader, TabPanel, Tabs, btn, card, input, th, Select } from "../ui";
 import LeadForm from "./LeadForm";
 import { Chip } from "./Matches";
 import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, STAGES, TEMPS, ago, papersDue, quiet } from "../crm";
@@ -134,7 +134,7 @@ export default function Leads() {
         </p>
       </div>
 
-      <div className={`${card} mt-4 overflow-x-auto`}>
+      <TabPanel key={kind} className={`${card} mt-4 overflow-x-auto`}>
         {!list ? (
           <SkeletonRows />
         ) : !shown.length ? (
@@ -201,7 +201,7 @@ export default function Leads() {
             </tbody>
           </table>
         )}
-      </div>
+      </TabPanel>
 
       <Modal open={adding} onClose={() => setAdding(false)} title="Add lead">
         {adding && <LeadForm lead={{ category: kind }} onSaved={(l) => navigate(`/leads/${l.id}`)} />}

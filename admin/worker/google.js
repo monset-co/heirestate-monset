@@ -9,10 +9,12 @@
 //   GET  /api/google/events      ?from=2026-11-01&to=2026-12-13 (Manila days, up to 100), else the next 60 days
 //   POST /api/google/book        { title, start: "2026-11-20T14:00", minutes, location?, guest?, notes?, lead_id? }
 //   POST /api/google/cancel      { id }
+// Email (read-only) is gmail.js, on the same connection.
 // Needs GOOGLE_CLIENT_ID (var) and GOOGLE_CLIENT_SECRET (secret).
 import { db } from "./supabase.js";
 
-const SCOPES = "openid email https://www.googleapis.com/auth/calendar.events";
+// Calendar to book; Gmail read-only for the Email page (gmail.js). Gmail is optional at consent.
+const SCOPES = "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly";
 const TZ = "Asia/Manila";
 const CAL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
@@ -82,7 +84,7 @@ export async function callback(req, env) {
 
 // an access token, kept for this isolate until shortly before it expires
 let cached = null;
-async function access(env) {
+export async function access(env) {
   if (cached && cached.until > Date.now()) return cached.token;
   const [row] = await db(env).get("google_account?select=refresh_token");
   if (!row) throw Object.assign(new Error("Google isn't connected"), { status: 409 });

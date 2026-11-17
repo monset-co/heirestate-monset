@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask } from "../ui";
 
 const STATUSES = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
 const TABS = [
@@ -133,8 +133,8 @@ export default function Inventory() {
         </p>
       </div>
 
-      {/* keyed by tab: a new tab's rows fade in rather than snap */}
-      <div key={tab.id} className={`${card} mt-4 overflow-x-auto animate-[fade-in_160ms_ease-out]`}>
+      {/* keyed by tab: a new tab's rows rise in rather than snap */}
+      <TabPanel key={tab.id} className={`${card} mt-4 overflow-x-auto`}>
         {!list ? (
           <SkeletonRows />
         ) : !shown.length ? (
@@ -172,7 +172,7 @@ export default function Inventory() {
             </tbody>
           </table>
         )}
-      </div>
+      </TabPanel>
       {list && shown.length > 0 && <p className="mt-2 text-xs text-muted">{shown.length} shown</p>}
 
       <Modal open={!!open} onClose={() => setOpen(null)} title={open?.id ? open.type || "Property" : "Add property"}>

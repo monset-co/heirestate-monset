@@ -1,12 +1,13 @@
 // On a lead: the inventory that fits what they want (admin/src/match.js), best first. Each wish
 // they named shows as a chip in its own colour when the property meets it, grey and struck through
 // when it doesn't, so a glance says why a property is on the list.
-import { useEffect, useState } from "react";
+import { Star } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { supabase, run } from "../supabase";
-import { SkeletonRows } from "../motion";
+import { SkeletonRows, toast } from "../motion";
 import { Empty, ErrorNote, btnGhost, card } from "../ui";
-import { LOOKING_TO, matches } from "../match";
+import { LOOKING_TO, fit, matches } from "../match";
 
 const TONES = {
   navy: "bg-navy/10 text-navy",
@@ -32,22 +33,41 @@ const START = { "pre-selling": ["Pre-selling"], rentals: ["For Rent", "Rented"],
 const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
 
 export default function Matches({ lead }) {
-  const [list, setList] = useState(null);
+  const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
   const [all, setAll] = useState(false);
+  const [priorities, setPriorities] = useState(lead.priorities ?? []);
+  const [onlyPrio, setOnlyPrio] = useState(false);
   const statuses = lead.looking_to?.length ? lead.looking_to.flatMap((w) => LOOKING_TO[w] ?? []) : START[lead.category];
   const key = JSON.stringify([statuses, lead.property_types, lead.areas, lead.furnishings, lead.budget_max, lead.needed_by]);
 
   useEffect(() => {
     if (!statuses.length) return setList([]);
     run(supabase.from("inventory").select("id, status, type, location, price, price_text, furnishing, available, available_from").overlaps("status", statuses)).then(
-      (rows) => setList(matches(lead, rows, 50)),
+      setRows,
       (e) => setError(e.message)
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  const asked = CRITERIA.filter(([k]) => list?.some((m) => m.f[k] !== null));
+  const list = useMemo(() => rows && matches({ ...lead, priorities }, rows, 50, onlyPrio && priorities.length > 0), [rows, priorities, onlyPrio, lead]);
+  // a wish counts as asked when they named it; "Free in time" always applies
+  const named = fit(lead, { status: [], type: "", location: "" }); // which wishes are null depends only on the lead
+  const asked = CRITERIA.filter(([k]) => named[k] !== null);
+
+  // star a wish to make it a priority; saved on the lead, so the whole team sees the same order
+  async function star(k) {
+    const next = priorities.includes(k) ? priorities.filter((x) => x !== k) : [...priorities, k];
+    setPriorities(next);
+    try {
+      await run(supabase.from("leads").update({ priorities: next }).eq("id", lead.id));
+    } catch (e) {
+      setPriorities(priorities);
+      setError(e.message);
+      return;
+    }
+    toast(next.includes(k) ? `${CRITERIA.find((c) => c[0] === k)[1]} is a priority` : "Priority removed");
+  }
   const shown = all ? list : list?.slice(0, 6);
   return (
     <section className="mt-6 max-w-5xl" aria-labelledby="matches-title">
@@ -63,11 +83,35 @@ export default function Matches({ lead }) {
         </p>
       </div>
       <ErrorNote error={error} />
+      {asked.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted">What matters most:</span>
+          {asked.map(([k, label]) => {
+            const on = priorities.includes(k);
+            return (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={on}
+                onClick={() => star(k)}
+                className={`press inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors duration-150 ${on ? "border-gold bg-gold/20 text-gold-ink" : "border-line bg-surface text-muted hover:text-fg"}`}
+              >
+                <Star aria-hidden className={`size-3.5 transition-transform duration-200 ${on ? "scale-110 fill-gold text-gold" : ""}`} /> {label}
+              </button>
+            );
+          })}
+          {priorities.length > 0 && (
+            <label className="ml-auto flex items-center gap-2 text-xs text-muted">
+              <input type="checkbox" checked={onlyPrio} onChange={(e) => setOnlyPrio(e.target.checked)} className="size-4 accent-navy" /> Only ones that meet every priority
+            </label>
+          )}
+        </div>
+      )}
       <div className={`${card} mt-3`}>
         {!list ? (
           <SkeletonRows n={3} />
         ) : !list.length ? (
-          <Empty>{statuses.length ? "Nothing on offer fits yet. Widen what they want, or check back as inventory comes in." : "They're selling or leasing out: there's nothing to match. Add their property to the Inventory."}</Empty>
+          <Empty>{onlyPrio ? "Nothing meets every priority. Untick “Only ones that meet every priority” to see the closest." : statuses.length ? "Nothing on offer fits yet. Widen what they want, or check back as inventory comes in." : "They're selling or leasing out: there's nothing to match. Add their property to the Inventory."}</Empty>
         ) : (
           <ul className="divide-y divide-line">
             {shown.map(({ p, f }) => (
@@ -78,7 +122,10 @@ export default function Matches({ lead }) {
                     <p className="truncate text-xs text-muted">{p.location}</p>
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {asked.filter(([k]) => f[k] !== null).map(([k, label, tone]) => (
-                        <Chip key={k} tone={f[k] ? tone : "off"}>{label}</Chip>
+                        <Chip key={k} tone={f[k] ? tone : "off"}>
+                          {priorities.includes(k) && <Star aria-label="priority" className="mr-0.5 size-3 fill-current" />}
+                          {label}
+                        </Chip>
                       ))}
                     </div>
                   </div>

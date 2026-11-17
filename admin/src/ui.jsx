@@ -153,14 +153,13 @@ export function Confirmer() {
 }
 
 /**
- * A drop-in for <select> (same value, onChange(e.target.value), <option>, <optgroup>). With a mouse
- * or trackpad it opens a menu that grows from its trigger (the motion is .menu in admin.css): a
- * popover in the top layer, so Esc and clicking away close it and nothing clips it. On touch it
- * stays the phone's own picker, which is better there than anything we could draw.
+ * A drop-in for <select> (same value, onChange(e.target.value), <option>, <optgroup>). It opens a
+ * menu that grows from its trigger (the motion is .menu in admin.css): a
+ * popover in the top layer, so Esc and clicking away close it and nothing clips it, the same on
+ * phones. The highlight glides from option to option.
  * `multiple`: value is an array, each pick toggles and the menu stays open; `placeholder` shows
  * while nothing is picked.
  */
-const coarse = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 const textOf = (children) => Children.toArray(children).join("");
 function optionsOf(children, group) {
   return Children.toArray(children).flatMap((el) =>
@@ -173,7 +172,6 @@ function optionsOf(children, group) {
 }
 
 export function Select({ value, onChange, children, className = "", disabled, required, multiple, placeholder = "", ...aria }) {
-  const [touch] = useState(coarse);
   const options = optionsOf(children);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -259,21 +257,6 @@ export function Select({ value, onChange, children, className = "", disabled, re
     e.preventDefault();
   }
 
-  if (touch)
-    return (
-      <select
-        value={value}
-        multiple={multiple}
-        onChange={multiple ? (e) => onChange?.({ target: { value: [...e.target.selectedOptions].map((o) => o.value) } }) : onChange}
-        disabled={disabled}
-        required={required}
-        className={className}
-        {...aria}
-      >
-        {children}
-      </select>
-    );
-
   return (
     <span className="relative block">
       <button
@@ -331,10 +314,11 @@ export function Select({ value, onChange, children, className = "", disabled, re
                   aria-disabled={o.disabled || undefined}
                   onPointerMove={() => !o.disabled && active !== i && setActive(i)}
                   onClick={() => choose(i)}
-                  className={`flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 select-none ${i === active ? "bg-sunken" : ""} ${o.disabled ? "opacity-45" : ""} ${isPicked(o, i) ? "font-medium text-ink" : ""}`}
+                  className={`relative flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 select-none ${o.disabled ? "opacity-45" : ""} ${isPicked(o, i) ? "font-medium text-ink" : ""}`}
                 >
-                  <span className="min-w-0 flex-1 truncate">{o.label || " "}</span>
-                  <Check aria-hidden className={`size-4 shrink-0 text-gold-ink ${isPicked(o, i) ? "" : "invisible"}`} />
+                  {i === active && <motion.span layoutId={`${id}-hl`} transition={{ type: "spring", stiffness: 700, damping: 45 }} className="absolute inset-0 rounded-md bg-sunken" />}
+                  <span className="relative min-w-0 flex-1 truncate">{o.label || " "}</span>
+                  <Check aria-hidden className={`relative size-4 shrink-0 text-gold-ink ${isPicked(o, i) ? "" : "invisible"}`} />
                 </div>
               </li>
             ))}
@@ -350,6 +334,15 @@ export function Select({ value, onChange, children, className = "", disabled, re
  * colours is clipped to the selected tab, and the clip moves like a worm: the leading edge leaves
  * first and the trailing edge catches up. Only the active panel mounts; the caller renders it.
  */
+/** What a tab shows: give it key={the tab} and each switch fades the new content up into place. */
+export function TabPanel({ children, className }) {
+  return (
+    <motion.div initial={{ opacity: 0, transform: "translateY(8px)" }} animate={{ opacity: 1, transform: "translateY(0px)" }} transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }} className={className}>
+      {children}
+    </motion.div>
+  );
+}
+
 export function Tabs({ items, value, onChange, label }) {
   const listRef = useRef(null);
   const tabRefs = useRef([]);

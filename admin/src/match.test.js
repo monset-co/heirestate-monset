@@ -19,6 +19,15 @@ test("a 3BR house to rent in Guadalupe under ₱60,000", () => {
   assert.deepEqual(matches(lead, [condo, best]).map((x) => x.p), [best, condo]);
 });
 
+test("priorities come first, and can be the only ones", () => {
+  const lead = { looking_to: ["Rent"], areas: ["Lahug"], budget_max: 30000, priorities: ["area"] };
+  const cheapFar = p({ location: "Talisay", price: 20000 });
+  const pricyNear = p({ location: "Lahug, Cebu City", price: 45000 });
+  assert.deepEqual(matches(lead, [cheapFar, pricyNear]).map((x) => x.p), [pricyNear, cheapFar], "where beats budget");
+  assert.deepEqual(matches({ ...lead, priorities: [] }, [pricyNear, cheapFar]).map((x) => x.p), [cheapFar, pricyNear], "without it, budget counts the same");
+  assert.deepEqual(matches(lead, [cheapFar, pricyNear], 12, true).map((x) => x.p), [pricyNear]);
+});
+
 test("lots aren't houses and lots", () => {
   const lead = { property_types: ["Lot"] };
   assert.equal(fit(lead, p({ type: "Lot" })).kind, true);

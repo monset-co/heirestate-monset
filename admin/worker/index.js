@@ -5,7 +5,7 @@
 //   /api/visits?days=7|30|90           site visits from Cloudflare Web Analytics
 //   /api/whatsapp/webhook              Meta's WhatsApp messages and statuses (signed, no sign-in)
 //   /api/whatsapp/send, /media/:id     a reply from the admin, a photo or file they sent
-//   /api/google/*                      Google Calendar bookings on the connected account (google.js)
+//   /api/google/*                      Google Calendar bookings, and its Gmail read-only (google.js, gmail.js)
 //   scheduled (every 15 minutes)       emails reminders that have come due
 //   PublicApi.inquiry()                saves an inquiry from the public sites and alerts its agent
 // Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN, GOOGLE_CLIENT_SECRET (wrangler secret put). The rest is in
@@ -16,6 +16,7 @@ import { mail } from "./mail.js";
 import { newCode, hash, check, canSend, TTL, TRIES } from "./code.js";
 import * as whatsapp from "./whatsapp.js";
 import * as google from "./google.js";
+import * as gmail from "./gmail.js";
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 const fail = (error, status = 400) => json({ error }, status);
@@ -171,6 +172,16 @@ export default {
         return new Response("error", { status: 500 }); // Meta tries again later
       }
     }
+    // an email's HTML for its iframe: checked by its signed ticket instead
+    const mailView = req.method === "GET" && url.pathname.match(/^\/api\/google\/mail\/([^/]+)\/view$/);
+    if (mailView) {
+      try {
+        return await gmail.view(env, mailView[1], url);
+      } catch (e) {
+        console.error("mail view", e);
+        return new Response("This email couldn't be shown.", { status: 502 });
+      }
+    }
     // Google sending the admin back after consent: checked by its signed state instead
     if (url.pathname === "/api/google/callback" && req.method === "GET") {
       try {
@@ -205,6 +216,9 @@ export default {
           if (route === "GET events") return await google.events(env, url);
           if (route === "POST book") return await google.book(req, env, me);
           if (route === "POST cancel") return await google.cancel(req, env);
+          if (route === "GET mail") return await gmail.list(env, url);
+          const m = route.match(/^GET mail\/([^/]+)(?:\/att\/([^/]+))?$/);
+          if (m) return m[2] ? await gmail.attachment(env, m[1], m[2], url.searchParams.get("name")) : await gmail.read(env, m[1]);
         } catch (e) {
           if (!e.status) throw e;
           console.error("google", e);

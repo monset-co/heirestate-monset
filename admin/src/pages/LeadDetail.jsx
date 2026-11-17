@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, Tabs, btn, btnDanger, btnGhost, card, input, Select, ask } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, Select, ask } from "../ui";
 import LeadForm from "./LeadForm";
 import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, TEMPS, ago, papersDue, quiet, when } from "../crm";
 import Activity from "./Activity";
@@ -94,14 +94,14 @@ export default function LeadDetail() {
       <div className="mt-6">
         <Tabs label="Lead sections" items={TABS.map((t) => ({ id: t, title: t }))} value={tab} onChange={(t) => setParams({ tab: t }, { replace: true })} />
       </div>
-      <div className="mt-6">
+      <TabPanel key={tab} className="mt-6">
         {tab === "Overview" && <Overview lead={lead} onSaved={(l) => setLead({ ...lead, ...l })} />}
         {tab === "Notes" && <Notes leadId={lead.id} notes={notes} setNotes={setNotes} />}
         {tab === "Files" && <FilesTab leadId={lead.id} lead={lead} onChecked={(papers_verified) => setOverview((o) => o && { ...o, papers_verified })} />}
         {tab === "WhatsApp" && <LeadChat lead={lead} chat={chat} setChat={setChat} />}
         {tab === "Reminders" && <Reminders lead={lead} />}
         {tab === "Activity" && <Activity lead={lead.id} />}
-      </div>
+      </TabPanel>
 
       <Modal open={editing} onClose={() => setEditing(false)} title={`Edit ${lead.name}`}>
         {editing && (

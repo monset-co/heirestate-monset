@@ -83,15 +83,20 @@ export function fit(lead, p, today = new Date().toISOString().slice(0, 10)) {
   const offered = p.status.some((s) => ["Pre-selling", "For Rent", "For Sale", "For Assume"].includes(s)) || p.available_from > today;
   r.ok = offered && r.status !== false;
   r.score = WISHES.filter((k) => r[k] === true).length; // wishes met, for ranking
+  // the wishes the team marked as what matters most: how many are met, and whether all are
+  const prio = (lead.priorities ?? []).filter((k) => r[k] !== null);
+  r.prio = prio.filter((k) => r[k]).length;
+  r.allPrio = r.prio === prio.length;
   return r;
 }
 
-// the best fits first: most wishes met, then the cheapest
-export const matches = (lead, inventory, limit = 12) =>
+// the best fits first: most priorities met, then most wishes, then the cheapest; with
+// `onlyPriorities`, just those meeting every priority
+export const matches = (lead, inventory, limit = 12, onlyPriorities = false) =>
   inventory
     .map((p) => ({ p, f: fit(lead, p) }))
-    .filter((x) => x.f.ok)
-    .sort((a, b) => b.f.score - a.f.score || (a.p.price ?? Infinity) - (b.p.price ?? Infinity))
+    .filter((x) => x.f.ok && (!onlyPriorities || x.f.allPrio))
+    .sort((a, b) => b.f.prio - a.f.prio || b.f.score - a.f.score || (a.p.price ?? Infinity) - (b.p.price ?? Infinity))
     .slice(0, limit);
 
 // A mobile number, tidied so the same person is typed the same way: Philippine numbers in any
