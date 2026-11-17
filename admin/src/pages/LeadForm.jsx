@@ -1,35 +1,60 @@
 // A lead added by hand (someone who wrote on WhatsApp, Rent.ph, Filipino Homes, Facebook, a
-// referral or a walk-in), or any lead's details corrected. What they're looking for follows the
-// team's CLF sheet: type, place, budget, furnishing, when.
+// referral or a walk-in), or any lead's details corrected. What they want is picked from fixed
+// choices (admin/src/match.js), never typed, so the lead can be matched against the inventory and
+// the same wish always reads the same way.
 import { useState } from "react";
 import { supabase, run } from "../supabase";
 import { toast } from "../motion";
-import { ErrorNote, Field, btn, input, Select } from "../ui";
+import { ErrorNote, Field, Select, btn, input } from "../ui";
 import { CATEGORIES, SOURCES } from "../crm";
+import { AREAS, FURNISHING, KINDS, LOOKING_TO, SIZES, pesos, tidyMobile } from "../match";
 
-const TEXT = { name: 100, mobile: 40, email: 254, interest: 120, property_type: 200, location: 300, budget: 80, furnishing: 200, target_date: 120, message: 2000 };
-const WANTS = { "pre-selling": ["Buying pre-selling", "Buying ready for occupancy"], rentals: ["For Rent"], brokerage: ["For Sale", "For Assume", "Selling their property"] };
+const START = { "pre-selling": ["Buy pre-selling"], rentals: ["Rent"], brokerage: ["Buy resale"] };
+const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
 
 export default function LeadForm({ lead, onSaved }) {
   const isNew = !lead.id;
+  const category = lead.category ?? "pre-selling";
   const [f, setF] = useState(() => ({
-    ...Object.fromEntries(Object.keys(TEXT).map((k) => [k, lead[k] ?? ""])),
-    category: lead.category ?? "pre-selling",
+    name: lead.name ?? "",
+    mobile: lead.mobile ?? "",
+    email: lead.email ?? "",
+    message: lead.message ?? "",
+    category,
     source_site: lead.source_site ?? "whatsapp",
+    looking_to: lead.looking_to?.length ? lead.looking_to : isNew ? START[category] : [],
+    property_types: lead.property_types ?? [],
+    areas: lead.areas ?? [],
+    furnishings: lead.furnishings ?? [],
+    budget: lead.budget_max ? peso(lead.budget_max) : "",
+    needed_by: lead.needed_by ?? "",
   }));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const handAdded = isNew || lead.source_site in SOURCES; // a site's form keeps its source
+  const budget = pesos(f.budget);
+  const mobile = f.mobile.trim() ? tidyMobile(f.mobile) : "";
 
   async function save(e) {
     e.preventDefault();
     setError("");
-    const out = Object.fromEntries(Object.keys(TEXT).map((k) => [k, f[k].trim() || null]));
-    out.mobile ??= "";
-    out.email = out.email?.toLowerCase() ?? null;
-    if (!out.mobile && !out.email) return setError("Add a mobile number or an email, so the team can reach them.");
-    out.category = f.category;
+    if (mobile === null) return setError("That mobile number doesn't look right. Use 0917 123 4567, or + and the country code for numbers abroad.");
+    if (!mobile && !f.email.trim()) return setError("Add a mobile number or an email, so the team can reach them.");
+    if (f.budget.trim() && budget === null) return setError("Write the budget as an amount: 45000, 45k or 1.5M.");
+    const out = {
+      name: f.name.trim(),
+      mobile: mobile ?? "",
+      email: f.email.trim().toLowerCase() || null,
+      message: f.message.trim() || null,
+      category: f.category,
+      looking_to: f.looking_to,
+      property_types: f.property_types,
+      areas: f.areas,
+      furnishings: f.furnishings,
+      budget_max: budget,
+      needed_by: f.needed_by || null,
+    };
     if (handAdded) out.source_site = f.source_site;
     setBusy(true);
     try {
@@ -48,7 +73,7 @@ export default function LeadForm({ lead, onSaved }) {
       <ErrorNote error={error} />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Kind">
-          <Select value={f.category} onChange={set("category")} className={input}>
+          <Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value, looking_to: isNew ? START[e.target.value] : f.looking_to })} className={input}>
             {Object.entries(CATEGORIES).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
           </Select>
         </Field>
@@ -62,42 +87,51 @@ export default function LeadForm({ lead, onSaved }) {
         <Field label="Name">
           <input value={f.name} onChange={set("name")} required minLength={2} maxLength={100} autoComplete="off" className={input} />
         </Field>
-        <Field label="Mobile">
-          <input type="tel" value={f.mobile} onChange={set("mobile")} maxLength={40} placeholder="0917 123 4567" className={input} />
+        <Field label="Mobile" hint={mobile ? `Saved as ${mobile}` : mobile === null ? "Not a mobile number yet" : "0917 123 4567, or + and the country code"}>
+          <input type="tel" inputMode="tel" value={f.mobile} onChange={set("mobile")} onBlur={() => mobile && setF({ ...f, mobile })} maxLength={40} className={`${input} tabular-nums`} />
         </Field>
         <Field label="Email">
           <input type="email" value={f.email} onChange={set("email")} maxLength={254} className={input} />
         </Field>
-        <Field label="Looking to">
-          <input value={f.interest} onChange={set("interest")} maxLength={120} list="lead-wants" className={input} />
-          <datalist id="lead-wants">
-            {WANTS[f.category].map((w) => <option key={w} value={w} />)}
-          </datalist>
-        </Field>
       </div>
 
-      <h3 className="mt-2 font-display text-lg text-ink">What they're looking for</h3>
+      <h3 className="mt-2 font-display text-lg text-ink">What they want</h3>
+      <p className="-mt-2 text-xs text-muted">Pick as many as fit. The lead's Overview lists the inventory that matches.</p>
       <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Looking to">
+          <Select multiple value={f.looking_to} onChange={set("looking_to")} placeholder="Choose…" className={input}>
+            {Object.keys(LOOKING_TO).map((k) => <option key={k} value={k}>{k}</option>)}
+          </Select>
+        </Field>
         <Field label="Property type">
-          <input value={f.property_type} onChange={set("property_type")} maxLength={200} placeholder="1BR Condo, House & Lot 3BR, Lot…" className={input} />
+          <Select multiple value={f.property_types} onChange={set("property_types")} placeholder="Any" className={input}>
+            <optgroup label="Kind">{Object.keys(KINDS).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
+            <optgroup label="Size">{Object.keys(SIZES).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
+          </Select>
         </Field>
         <Field label="Where">
-          <input value={f.location} onChange={set("location")} maxLength={300} placeholder="Near IT Park, Talisay…" className={input} />
-        </Field>
-        <Field label="Budget">
-          <input value={f.budget} onChange={set("budget")} maxLength={80} placeholder={f.category === "rentals" ? "₱45,000/mo max" : "₱5M–₱8M"} className={input} />
+          <Select multiple value={f.areas} onChange={set("areas")} placeholder="Anywhere" className={input}>
+            {Object.entries(AREAS).map(([g, list]) => (
+              <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
+            ))}
+          </Select>
         </Field>
         <Field label="Furnishing">
-          <input value={f.furnishing} onChange={set("furnishing")} maxLength={200} list="lead-furnishing" className={input} />
-          <datalist id="lead-furnishing">
-            {["Fully furnished", "Semi-furnished", "Unfurnished", "Any"].map((w) => <option key={w} value={w} />)}
-          </datalist>
+          <Select multiple value={f.furnishings} onChange={set("furnishings")} placeholder="Any" className={input}>
+            {FURNISHING.map((k) => <option key={k} value={k}>{k}</option>)}
+          </Select>
         </Field>
-        <Field label="When">
-          <input value={f.target_date} onChange={set("target_date")} maxLength={120} placeholder="Move in by January 2027" className={input} />
+        <Field label={f.looking_to.includes("Rent") ? "Budget a month, at most" : "Budget, at most"} hint={budget ? peso(budget) : "45000, 45k or 1.5M"}>
+          <span className="relative block">
+            <span aria-hidden className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-muted">₱</span>
+            <input inputMode="decimal" value={f.budget.replace(/^₱/, "")} onChange={set("budget")} onBlur={() => budget && setF({ ...f, budget: peso(budget) })} className={`${input} pl-7 tabular-nums`} />
+          </span>
+        </Field>
+        <Field label="Needed by" hint="Move-in or purchase date">
+          <input type="date" value={f.needed_by} onChange={set("needed_by")} className={input} />
         </Field>
       </div>
-      <Field label="Notes" hint="Specs, must-haves, occupants, pets, anything else they said">
+      <Field label="Notes" hint="Must-haves, occupants, pets, anything else they said">
         <textarea value={f.message} onChange={set("message")} rows={4} maxLength={2000} className={input} />
       </Field>
       <button className={btn} disabled={busy}>{busy ? "Saving…" : isNew ? "Add lead" : "Save"}</button>

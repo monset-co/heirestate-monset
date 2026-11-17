@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { Live, LiveTr, SkeletonRows, spring } from "../motion";
 import { Badge, Empty, ErrorNote, Modal, PageHeader, Tabs, btn, card, input, th, Select } from "../ui";
 import LeadForm from "./LeadForm";
+import { Chip } from "./Matches";
 import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, STAGES, TEMPS, ago, papersDue, quiet } from "../crm";
 
 // Quick lists, the saved views a CRM keeps: each one a question an agent asks every morning.
@@ -20,6 +21,14 @@ const LISTS = {
   all: ["Everyone", () => true],
 };
 
+const remembered = () => {
+  try {
+    return localStorage.getItem("leads-kind");
+  } catch {
+    return null;
+  }
+};
+
 export default function Leads() {
   const navigate = useNavigate();
   const me = useMe();
@@ -30,12 +39,13 @@ export default function Leads() {
   const stage = params.get("stage") ?? "";
   const listKey = LISTS[params.get("list")] ? params.get("list") : "open";
   const site = params.get("site") ?? "";
-  const kind = CATEGORIES[params.get("kind")] ? params.get("kind") : "pre-selling";
+  // the tab in the address, else the one used last on this device
+  const kind = CATEGORIES[params.get("kind")] ? params.get("kind") : CATEGORIES[remembered()] ? remembered() : "pre-selling";
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     Promise.all([
-      run(supabase.from("leads").select("id, name, email, mobile, interest, category, property_type, location, budget, source_site, stage, temperature, reserved_at, agent_id, created_at, agent:admin_users(name), listing:listings(title)").order("created_at", { ascending: false })),
+      run(supabase.from("leads").select("id, name, email, mobile, interest, category, looking_to, property_types, areas, budget_max, budget, source_site, stage, temperature, reserved_at, agent_id, created_at, agent:admin_users(name), listing:listings(title)").order("created_at", { ascending: false })),
       run(supabase.from("lead_overview").select("*")),
     ]).then(([leads, overview]) => {
       const o = new Map(overview.map((r) => [r.id, r]));
@@ -52,7 +62,7 @@ export default function Leads() {
         LISTS[listKey][1](l, me) &&
         (!stage || l.stage === stage) &&
         (!site || l.source_site === site) &&
-        (!q || [l.name, l.email, l.mobile, l.interest, l.property_type, l.location, l.listing?.title].some((v) => v?.toLowerCase().includes(q)))
+        (!q || [l.name, l.email, l.mobile, l.interest, l.listing?.title, ...l.property_types, ...l.areas].some((v) => v?.toLowerCase().includes(q)))
     );
   }, [list, text, stage, site, listKey, me, kind]);
   const set = (k) => (e) => setParams((p) => (e.target.value ? p.set(k, e.target.value) : p.delete(k), p), { replace: true });
@@ -70,7 +80,14 @@ export default function Leads() {
           label="Kind of lead"
           items={Object.entries(CATEGORIES).map(([id, t]) => ({ id, title: list ? `${t} ${list.filter((l) => l.category === id && OPEN.includes(l.stage)).length}` : t }))}
           value={kind}
-          onChange={(k) => setParams((p) => (p.set("kind", k), p), { replace: true })}
+          onChange={(k) => {
+            try {
+              localStorage.setItem("leads-kind", k);
+            } catch {
+              /* private mode: the tab just isn't remembered */
+            }
+            setParams((p) => (p.set("kind", k), p), { replace: true });
+          }}
         />
       </div>
 
@@ -110,8 +127,11 @@ export default function Leads() {
         </Select>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <ErrorNote error={error} />
+        <p className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted" aria-label="Legend">
+          What they want: <Chip tone="violet">Type</Chip> <Chip tone="sky">Where</Chip> <Chip tone="gold">Budget</Chip>
+        </p>
       </div>
 
       <div className={`${card} mt-4 overflow-x-auto`}>
@@ -142,7 +162,13 @@ export default function Leads() {
                         </Link>
                         {l.temperature && <Badge value={l.temperature}>{TEMPS[l.temperature]}</Badge>}
                       </span>
-                      <p className="truncate text-xs text-muted">{[l.interest, l.property_type, l.location, l.listing?.title, l.budget].filter(Boolean).join(" · ")}</p>
+                      {/* what they want, in the lead page's colours: type, place, budget */}
+                      <span className="mt-1 flex flex-wrap items-center gap-1">
+                        {l.property_types.slice(0, 2).map((t) => <Chip key={t} tone="violet">{t}</Chip>)}
+                        {l.areas.slice(0, 2).map((a) => <Chip key={a} tone="sky">{a}</Chip>)}
+                        {l.budget_max ? <Chip tone="gold">≤ ₱{l.budget_max.toLocaleString("en-PH")}</Chip> : null}
+                        {!l.property_types.length && !l.areas.length && (l.interest || l.listing?.title) && <span className="truncate text-xs text-muted">{[l.interest, l.listing?.title].filter(Boolean).join(" · ")}</span>}
+                      </span>
                     </td>
                     <td className="hidden px-4 py-3 whitespace-nowrap text-muted md:table-cell">{SITES[l.source_site] ?? l.source_site}</td>
                     <td className="hidden px-4 py-3 whitespace-nowrap text-muted lg:table-cell">{l.agent?.name ?? "—"}</td>

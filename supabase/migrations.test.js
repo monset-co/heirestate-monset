@@ -189,6 +189,10 @@ assert.equal((await admin("insert into leads (source_site, listing_id, name, mob
 assert.equal((await admin("insert into leads (source_site, category, name, mobile) values ('rph', 'rentals', 'Ben Lim', '0918') returning category"))[0].category, "rentals");
 await fails(() => admin("insert into leads (source_site, category, name, mobile) values ('rph', 'resale', 'Ben Lim', '0918')"), /check constraint/);
 
+// what a lead wants comes from the fixed choices
+await admin("insert into leads (source_site, name, mobile, looking_to, property_types, furnishings, budget_max) values ('rph', 'Cy Tan', '0919', '{Rent}', '{House & Lot,3BR+}', '{Unfurnished}', 60000)");
+await fails(() => admin("insert into leads (source_site, name, mobile, property_types) values ('rph', 'Cy Tan', '0919', '{Mansion}')"), /check constraint/);
+
 // inventory: admins only, statuses from the fixed set
 await admin("insert into inventory (status, location, price) values ('{For Rent}', 'IT Park', 25000)");
 assert.equal((await stranger("select count(*)::int n from inventory"))[0].n, 0);

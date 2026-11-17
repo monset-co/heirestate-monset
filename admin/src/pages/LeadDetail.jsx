@@ -1,9 +1,10 @@
-import { BellRing, ChevronLeft, Mail, MessageCircle, Pencil, Phone, Trash2 } from "lucide-react";
+import { BellRing, CalendarPlus, ChevronLeft, Mail, MessageCircle, Pencil, Phone, Trash2 } from "lucide-react";
+import Matches, { Chip } from "./Matches";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, Tabs, btn, btnDanger, btnGhost, card, input, Select } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, Tabs, btn, btnDanger, btnGhost, card, input, Select, ask } from "../ui";
 import LeadForm from "./LeadForm";
 import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, TEMPS, ago, papersDue, quiet, when } from "../crm";
 import Activity from "./Activity";
@@ -35,7 +36,7 @@ export default function LeadDetail() {
 
   // the Data Privacy Act: a person may ask for their details to be deleted
   async function remove() {
-    if (!confirm(`Delete ${lead.name} for good, with their notes, files, reminders, WhatsApp chat and history? Do this when they ask for their data to be deleted. It can't be undone.`)) return;
+    if (!(await ask({ title: `Delete ${lead.name} for good?`, body: "Their notes, files, reminders, WhatsApp chat and history go too. Do this when they ask for their data to be deleted. It can't be undone.", yes: "Delete for good", danger: true }))) return;
     try {
       // Storage won't let the database delete files, so theirs go first
       const files = await run(supabase.from("lead_files").select("file_path").eq("lead_id", lead.id));
@@ -223,32 +224,71 @@ function Overview({ lead, onSaved }) {
     setBusy(false);
   }
 
-  const rows = [
-    ["Mobile", <a key="tel" href={`tel:${lead.mobile.replace(/[^\d+]/g, "")}`} className="inline-flex items-center gap-1.5 underline underline-offset-2"><Phone className="size-3.5" aria-hidden />{lead.mobile}</a>],
-    ["Email", lead.email && <a key="mail" href={`mailto:${lead.email}`} className="inline-flex items-center gap-1.5 break-all underline underline-offset-2"><Mail className="size-3.5 shrink-0" aria-hidden />{lead.email}</a>],
-    ["Looking to", lead.interest],
-    ["Property type", lead.property_type],
-    ["Where", lead.location],
-    ["Furnishing", lead.furnishing],
-    ["When", lead.target_date],
-    ["Listing", lead.listing && <Link key="l" to={`/listings/${lead.listing.id}`} className="underline underline-offset-2">{lead.listing.title}</Link>],
-    ["Budget", lead.budget],
-    ["Preferred viewing", <span key="v">{lead.viewing_time && <>{lead.viewing_time}<br /></>}<Link to={`/calendar?lead=${lead.id}`} className="underline underline-offset-2">Book a viewing</Link></span>],
-    ["From", SITES[lead.source_site] ?? lead.source_site],
-    ["Consent given", lead.consent_at ? when(lead.consent_at) : SOURCES[lead.source_site] && `Came through ${SOURCES[lead.source_site]}; no website form`],
+  const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
+  // what they want, each kind of wish in its own colour (the same colours as the matches below)
+  const wants = [
+    ["Looking to", lead.looking_to, "navy"],
+    ["Type", lead.property_types, "violet"],
+    ["Where", lead.areas, "sky"],
+    ["Furnishing", lead.furnishings, "emerald"],
+    ["Budget", lead.budget_max ? [`up to ${peso(lead.budget_max)}${lead.looking_to?.includes("Rent") ? "/mo" : ""}`] : lead.budget ? [lead.budget] : [], "gold"],
+    ["Needed by", lead.needed_by ? [new Date(`${lead.needed_by}T00:00`).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })] : [], "burgundy"],
   ];
+  const site = [
+    ["Asked about", lead.interest],
+    ["Listing", lead.listing && <Link key="l" to={`/listings/${lead.listing.id}`} className="underline underline-offset-2">{lead.listing.title}</Link>],
+    ["Preferred viewing", lead.viewing_time],
+  ].filter(([, v]) => v);
   return (
+    <>
     <div className="stagger grid max-w-5xl gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-      <div className={card}>
-        <dl className="divide-y divide-line text-sm">
-          {rows.filter(([k, v]) => v || !["Property type", "Where", "Furnishing", "When"].includes(k)).map(([k, v]) => (
-            <div key={k} className="grid grid-cols-3 gap-4 px-4 py-3">
-              <dt className="text-muted">{k}</dt>
-              <dd className="col-span-2 break-words text-fg">{v || "—"}</dd>
-            </div>
-          ))}
-        </dl>
-        {lead.message && <p className="border-t border-line px-4 py-3 text-sm whitespace-pre-wrap">{lead.message}</p>}
+      <div className="grid h-fit gap-4">
+        <section className={`${card} grid gap-3 p-4 text-sm`} aria-label="Contact">
+          <div className="flex flex-wrap gap-2">
+            {lead.mobile && (
+              <a href={`tel:${lead.mobile.replace(/[^\d+]/g, "")}`} className={`${btnGhost} tabular-nums`}>
+                <Phone className="size-4" aria-hidden /> {lead.mobile}
+              </a>
+            )}
+            {lead.email && (
+              <a href={`mailto:${lead.email}`} className={`${btnGhost} min-w-0`}>
+                <Mail className="size-4 shrink-0" aria-hidden /> <span className="truncate">{lead.email}</span>
+              </a>
+            )}
+            <Link to={`/calendar?lead=${lead.id}`} className={btnGhost}>
+              <CalendarPlus className="size-4" aria-hidden /> Book a viewing
+            </Link>
+          </div>
+          <p className="text-xs text-muted">
+            Came through {SITES[lead.source_site] ?? lead.source_site}
+            {lead.consent_at ? ` · consent given ${when(lead.consent_at)}` : " · no website consent form"}
+          </p>
+        </section>
+
+        <section className={`${card} p-4`} aria-labelledby="wants-title">
+          <h2 id="wants-title" className="label mb-3 text-ink">What they want</h2>
+          <dl className="grid gap-2.5 text-sm">
+            {wants.map(([k, v, tone]) => (
+              <div key={k} className="grid grid-cols-[6.5rem_1fr] items-start gap-3">
+                <dt className="pt-0.5 text-muted">{k}</dt>
+                <dd className="flex flex-wrap gap-1.5">
+                  {v?.length ? v.map((x) => <Chip key={x} tone={tone}>{x}</Chip>) : <span className="text-muted/70">Any</span>}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {site.length > 0 && (
+            <dl className="mt-4 grid gap-1.5 border-t border-line pt-3 text-sm">
+              {site.map(([k, v]) => (
+                <div key={k} className="grid grid-cols-[6.5rem_1fr] gap-3">
+                  <dt className="text-muted">{k}</dt>
+                  <dd className="break-words">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {lead.message && <p className="mt-4 border-t border-line pt-3 text-sm whitespace-pre-wrap text-charcoal">{lead.message}</p>}
+        </section>
       </div>
 
       <form onSubmit={save} className={`${card} grid h-fit gap-4 p-5`}>
@@ -273,6 +313,8 @@ function Overview({ lead, onSaved }) {
         <button className={btn} disabled={busy || !dirty}>{busy ? "Saving…" : "Save"}</button>
       </form>
     </div>
+    <Matches lead={lead} />
+    </>
   );
 }
 

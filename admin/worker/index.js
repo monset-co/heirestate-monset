@@ -202,7 +202,7 @@ export default {
           if (route === "POST connect") return await google.connect(env, me);
           if (route === "GET status") return await google.status(env);
           if (route === "POST disconnect") return await google.disconnect(env);
-          if (route === "GET events") return await google.events(env);
+          if (route === "GET events") return await google.events(env, url);
           if (route === "POST book") return await google.book(req, env, me);
           if (route === "POST cancel") return await google.cancel(req, env);
         } catch (e) {

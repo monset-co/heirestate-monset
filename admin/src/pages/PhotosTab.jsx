@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, ImagePlus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase, run, PHOTOS } from "../supabase";
 import { Live, LiveLi, SkeletonRows, toast } from "../motion";
-import { Empty, ErrorNote, btnDanger, btnGhost, card, input } from "../ui";
+import { Empty, ErrorNote, btnDanger, btnGhost, card, input, ask } from "../ui";
 
 // A photo, shrunk in the browser to at most 2000px wide and sent as WebP: smaller uploads, the same
 // look on the sites, and no image service to pay for.
@@ -83,7 +83,7 @@ export default function PhotosTab({ listingId }) {
   }
 
   async function remove(p) {
-    if (!confirm("Remove this photo? It's deleted for good.")) return;
+    if (!(await ask({ title: "Remove this photo?", body: "It's deleted for good.", yes: "Remove", danger: true }))) return;
     try {
       await run(supabase.from("listing_photos").delete().eq("id", p.id));
       await run(supabase.storage.from(PHOTOS).remove([p.storage_key]));

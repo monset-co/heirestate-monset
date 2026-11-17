@@ -10,6 +10,7 @@ import { useInstall } from "./install";
 import { supabase } from "./supabase";
 import { useMe } from "./me";
 import { spring, Toaster } from "./motion";
+import { Confirmer } from "./ui";
 
 // tab: on the phone tab bar (the rest live under More)
 export const nav = [
@@ -149,6 +150,7 @@ export default function Shell() {
 
       <MoreSheet open={more} onClose={() => setMore(false)} items={nav.filter((n) => !n.tab)} />
       <Toaster />
+      <Confirmer />
     </div>
   );
 }

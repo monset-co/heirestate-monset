@@ -1,12 +1,13 @@
 // Inventory: every property the team can offer, from owners and other brokers (supabase/migrations
 // …_inventory.sql), in tabs for pre-selling, rentals and sales. Not the public listings: nothing here
 // shows on a site. A row opens its full record to read, copy the post summary from, or edit.
-import { Copy, ExternalLink, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Chip } from "./Matches";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, Tabs, btn, btnDanger, btnGhost, card, input, th, Select } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask } from "../ui";
 
 const STATUSES = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
 const TABS = [
@@ -29,9 +30,20 @@ export default function Inventory() {
   const [error, setError] = useState("");
   const [q, setQ] = useState({ text: "", status: "open", max: "", furnishing: "", when: "", pets: false });
   const [open, setOpen] = useState(null); // the row being read or edited; {} for a new one
+  const [editing, setEditing] = useState(false);
+  const show = (row, edit = false) => {
+    setOpen(row);
+    setEditing(edit);
+  };
 
   useEffect(() => {
-    run(supabase.from("inventory").select("*").order("updated_at", { ascending: false })).then(setList, (e) => setError(e.message));
+    run(supabase.from("inventory").select("*").order("updated_at", { ascending: false })).then((rows) => {
+      setList(rows);
+      // from a lead's matches: open that property
+      const want = rows.find((r) => r.id === Number(params.get("open")));
+      if (want) show(want);
+    }, (e) => setError(e.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const inTab = (t, r) => !t.has || r.status.some((s) => t.has.includes(s));
@@ -65,7 +77,7 @@ export default function Inventory() {
   return (
     <>
       <PageHeader title="Inventory" sub="Every property on offer from owners and brokers. Private to the team: nothing here shows on the sites (that's Listings).">
-        <button className={btn} onClick={() => setOpen({ status: tab.start })}>
+        <button className={btn} onClick={() => show({ status: tab.start }, true)}>
           <Plus className="size-4" aria-hidden /> Add property
         </button>
       </PageHeader>
@@ -108,8 +120,17 @@ export default function Inventory() {
         </label>
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <ErrorNote error={error} />
+        {/* the legend: what the status colours mean */}
+        <p className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted" aria-label="Legend">
+          <Badge value="available">On offer</Badge>
+          <Badge value="new">Pre-selling</Badge>
+          <Badge value="reserved">Reserved or assume</Badge>
+          <Badge value="lost">Rented</Badge>
+          <Badge value="sold">Sold</Badge>
+          <Badge value="draft">From a date</Badge>
+        </p>
       </div>
 
       {/* keyed by tab: a new tab's rows fade in rather than snap */}
@@ -130,15 +151,15 @@ export default function Inventory() {
             </thead>
             <tbody className="divide-y divide-line">
               {shown.map((r) => (
-                <tr key={r.id} onClick={() => setOpen(r)} className="group cursor-pointer transition-colors hover:bg-bg active:bg-sunken">
+                <tr key={r.id} onClick={() => show(r)} className="group cursor-pointer transition-colors hover:bg-bg active:bg-sunken">
                   <td className="w-full max-w-0 px-4 py-3">
-                    <button type="button" onClick={() => setOpen(r)} className="block max-w-full truncate text-left font-medium text-fg outline-offset-4 group-hover:text-accent-ink">
+                    <button type="button" onClick={() => show(r)} className="block max-w-full truncate text-left font-medium text-fg outline-offset-4 group-hover:text-accent-ink">
                       {r.type || "Property"}
                     </button>
                     <p className="truncate text-xs text-muted">{[r.location, r.source].filter(Boolean).join(" · ")}</p>
                   </td>
                   <td className="max-w-48 truncate px-4 py-3 text-right tabular-nums whitespace-nowrap" title={r.price_note ?? undefined}>{priceOf(r)}</td>
-                  <td className="hidden px-4 py-3 whitespace-nowrap text-muted md:table-cell">{r.furnishing ?? "—"}</td>
+                  <td className="hidden px-4 py-3 whitespace-nowrap md:table-cell">{r.furnishing ? <Chip tone="emerald">{r.furnishing}</Chip> : <span className="text-muted">—</span>}</td>
                   <td className="px-4 py-3">
                     <span className="flex flex-wrap gap-1">
                       {r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>)}
@@ -155,9 +176,85 @@ export default function Inventory() {
       {list && shown.length > 0 && <p className="mt-2 text-xs text-muted">{shown.length} shown</p>}
 
       <Modal open={!!open} onClose={() => setOpen(null)} title={open?.id ? open.type || "Property" : "Add property"}>
-        {open && <PropertyForm row={open} onSaved={saved} />}
+        {open && (editing ? <PropertyForm row={open} onSaved={saved} /> : <PropertyView row={open} onEdit={() => setEditing(true)} />)}
       </Modal>
     </>
+  );
+}
+
+// A property at a glance: price and status up top, the facts as chips, the long text in labelled
+// blocks, links as buttons. Edit opens the full form.
+function PropertyView({ row: r, onEdit }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const blocks = [
+    ["Specs", r.specs],
+    ["Inclusions", r.inclusions],
+    ["Payment terms", r.payment_terms],
+    ["Amenities and notes", r.notes],
+  ].filter(([, v]) => v);
+  const links = [
+    [r.source ? `${r.source}` : "Owner or broker", r.source_url],
+    [r.fb_posted_on ? `Facebook post · ${date(r.fb_posted_on)}` : "Facebook post", r.fb_post_url],
+    [`Rent.ph${r.rph_code ? ` · ${r.rph_code}` : ""}`, r.rph_url],
+    [`Filipino Homes${r.fh_code ? ` · ${r.fh_code}` : ""}`, r.fh_url],
+  ].filter(([, u]) => u);
+  return (
+    <div className="grid gap-5 text-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-display text-2xl text-ink tabular-nums">{priceOf(r)}</p>
+          {r.price_note && <p className="text-xs text-muted">{r.price_note}</p>}
+        </div>
+        <span className="flex flex-wrap gap-1">{r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>)}</span>
+      </div>
+      {r.location && (
+        <p className="flex items-start gap-1.5 text-charcoal">
+          <MapPin className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden /> {r.location}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-1.5">
+        {r.furnishing && <Chip tone="emerald">{r.furnishing}</Chip>}
+        <Chip tone={r.available_from > today ? "burgundy" : r.available === false ? "off" : "sky"}>
+          {r.available_from > today ? `Free from ${date(r.available_from)}` : r.available === false ? "Not available" : "Available now"}
+        </Chip>
+        <Chip tone={r.pet_friendly === "yes" ? "violet" : "off"}>{r.pet_friendly === "yes" ? "Pets OK" : r.pet_friendly === "no" ? "No pets" : "Pets not confirmed"}</Chip>
+        {[["rapa", "RAPA"], ["ats", "ATS"], ["pictures", "Pictures"]].map(([k, l]) => (
+          <Chip key={k} tone={r[k] ? "navy" : "off"}>{l}</Chip>
+        ))}
+      </div>
+      {blocks.map(([k, v]) => (
+        <div key={k}>
+          <p className="label mb-1 text-muted">{k}</p>
+          <p className="whitespace-pre-wrap text-charcoal">{v}</p>
+        </div>
+      ))}
+      {r.summary && (
+        <div className="rounded-lg bg-sunken/60 p-3">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="label text-muted">Summary for posts</p>
+            <button type="button" className="press inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-fg hover:bg-surface" onClick={() => navigator.clipboard.writeText(r.summary).then(() => toast("Summary copied"))}>
+              <Copy className="size-3.5" aria-hidden /> Copy
+            </button>
+          </div>
+          <p className="text-charcoal">{r.summary}</p>
+        </div>
+      )}
+      {links.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {links.map(([l, u]) => (
+            <a key={u} href={u} target="_blank" rel="noopener noreferrer" className={btnGhost}>
+              <ExternalLink className="size-4" aria-hidden /> {l}
+            </a>
+          ))}
+        </div>
+      )}
+      {!links.length && r.source && <p className="text-xs text-muted">From {r.source}</p>}
+      <div>
+        <button type="button" className={btn} onClick={onEdit}>
+          <Pencil className="size-4" aria-hidden /> Edit
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -205,7 +302,7 @@ function PropertyForm({ row, onSaved }) {
   }
 
   async function remove() {
-    if (!confirm("Delete this property from the inventory? This can't be undone.")) return;
+    if (!(await ask({ title: "Delete this property?", body: "It's removed from the inventory for good.", yes: "Delete", danger: true }))) return;
     try {
       await run(supabase.from("inventory").delete().eq("id", row.id));
       onSaved(row, true);

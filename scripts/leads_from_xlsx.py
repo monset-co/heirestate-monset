@@ -2,7 +2,8 @@
 
     python scripts/leads_from_xlsx.py "Property Listings Library.xlsx" > leads-import.sql
 
-then paste the file into Supabase > SQL editor and run it once. The output holds clients' names and
+then paste the file into Supabase > SQL editor and run it, before …_lead_wants.sql (which sorts the
+columns it fills into the fixed choices). Anyone already in, by name, is skipped. The output holds clients' names and
 numbers: don't commit it, and delete it once it's in. Needs openpyxl (pip install openpyxl).
 """
 import datetime
@@ -74,7 +75,9 @@ def main(path):
     cols = ", ".join(rows[0].keys())
     sys.stdout.reconfigure(encoding="utf-8")
     print(f"-- {len(rows)} inquiries from the {SHEET!r} sheet, {datetime.date.today()}")
-    print(f"insert into leads ({cols})\nselect {cols} from jsonb_populate_recordset(null::leads, $leads${body}$leads$::jsonb);")
+    # run it twice and nothing doubles: anyone already in, by name, is skipped
+    print(f"insert into leads ({cols})\nselect {cols} from jsonb_populate_recordset(null::leads, $leads${body}$leads$::jsonb) x\n"
+          f"where not exists (select 1 from leads l where lower(l.name) = lower(x.name));")
 
 
 if __name__ == "__main__":

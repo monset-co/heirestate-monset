@@ -103,10 +103,62 @@ export function Modal({ open, onClose, title, children }) {
 }
 
 /**
+ * The admin's own "are you sure?", in place of the browser's confirm():
+ *   if (!(await ask({ title: "Delete this file?", body: "It can't be undone.", yes: "Delete", danger: true }))) return;
+ * Rendered by <Confirmer /> (once, in Shell). Esc, Cancel and the backdrop all answer no; a
+ * dangerous question starts on Cancel. With `input: { placeholder }` it asks for a line of text
+ * and answers with it (or false).
+ */
+let asking = null;
+const askSubs = new Set();
+export function ask(q) {
+  return new Promise((resolve) => {
+    asking?.resolve(false);
+    asking = { ...q, resolve };
+    askSubs.forEach((s) => s(asking));
+  });
+}
+export function Confirmer() {
+  const [q, setQ] = useState(null);
+  const [text, setText] = useState("");
+  useEffect(() => {
+    askSubs.add((next) => (setText(""), setQ(next)));
+    return () => askSubs.clear();
+  }, []);
+  const answer = (yes) => {
+    q?.resolve(yes && q.input ? text.trim() || false : yes);
+    asking = null;
+    setQ(null);
+  };
+  return (
+    <Modal open={!!q} onClose={() => answer(false)} title={q?.title ?? ""}>
+      {q && (
+        <form
+          className="grid gap-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            answer(true);
+          }}
+        >
+          {q.body && <p className="text-sm text-charcoal">{q.body}</p>}
+          {q.input && <input autoFocus required value={text} onChange={(e) => setText(e.target.value)} maxLength={300} placeholder={q.input.placeholder} className={input} />}
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" autoFocus={q.danger} className={btnGhost} onClick={() => answer(false)}>{q.no ?? "Cancel"}</button>
+            <button autoFocus={!q.danger && !q.input} className={q.danger ? `${btn} bg-danger hover:bg-danger/90` : btn}>{q.yes ?? "OK"}</button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+/**
  * A drop-in for <select> (same value, onChange(e.target.value), <option>, <optgroup>). With a mouse
  * or trackpad it opens a menu that grows from its trigger (the motion is .menu in admin.css): a
  * popover in the top layer, so Esc and clicking away close it and nothing clips it. On touch it
  * stays the phone's own picker, which is better there than anything we could draw.
+ * `multiple`: value is an array, each pick toggles and the menu stays open; `placeholder` shows
+ * while nothing is picked.
  */
 const coarse = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 const textOf = (children) => Children.toArray(children).join("");
@@ -120,7 +172,7 @@ function optionsOf(children, group) {
   );
 }
 
-export function Select({ value, onChange, children, className = "", disabled, required, ...aria }) {
+export function Select({ value, onChange, children, className = "", disabled, required, multiple, placeholder = "", ...aria }) {
   const [touch] = useState(coarse);
   const options = optionsOf(children);
   const [open, setOpen] = useState(false);
@@ -130,7 +182,9 @@ export function Select({ value, onChange, children, className = "", disabled, re
   const typed = useRef({ text: "", at: 0 });
   const closedAt = useRef(0); // a click on the trigger first light-dismisses the open menu; that click must not reopen it
   const id = useId();
-  const picked = options.findIndex((o) => o.value === String(value ?? ""));
+  const picked = multiple ? -1 : options.findIndex((o) => o.value === String(value ?? ""));
+  const isPicked = (o, i) => (multiple ? (value ?? []).includes(o.value) : i === picked);
+  const shown = multiple ? options.filter((o) => value?.includes(o.value)).map((o) => o.label).join(", ") : options[picked]?.label;
 
   // the menu lives in the dialog it was opened from (outside an open modal everything is inert), else in <body>
   const [host, setHost] = useState(null);
@@ -139,6 +193,10 @@ export function Select({ value, onChange, children, className = "", disabled, re
   const choose = (i) => {
     const o = options[i];
     if (!o || o.disabled) return;
+    if (multiple) {
+      const now = value ?? [];
+      return onChange?.({ target: { value: now.includes(o.value) ? now.filter((v) => v !== o.value) : options.filter((x) => x.value === o.value || now.includes(x.value)).map((x) => x.value) } });
+    }
     if (o.value !== String(value ?? "")) onChange?.({ target: { value: o.value } });
     list.current?.hidePopover();
     button.current?.focus();
@@ -203,7 +261,15 @@ export function Select({ value, onChange, children, className = "", disabled, re
 
   if (touch)
     return (
-      <select value={value} onChange={onChange} disabled={disabled} required={required} className={className} {...aria}>
+      <select
+        value={value}
+        multiple={multiple}
+        onChange={multiple ? (e) => onChange?.({ target: { value: [...e.target.selectedOptions].map((o) => o.value) } }) : onChange}
+        disabled={disabled}
+        required={required}
+        className={className}
+        {...aria}
+      >
         {children}
       </select>
     );
@@ -228,7 +294,8 @@ export function Select({ value, onChange, children, className = "", disabled, re
         }}
         className={`${className} group flex items-center justify-between gap-2 text-left`}
       >
-        <span className={`truncate ${picked < 0 || !options[picked].value ? "text-muted" : ""}`}>{options[picked]?.label || " "}</span>
+        <span className={`truncate ${shown ? "" : "text-muted"}`}>{shown || placeholder || " "}</span>
+        {multiple && value?.length > 1 && <span className="shrink-0 rounded-full bg-navy px-1.5 text-xs font-medium text-cream tabular-nums">{value.length}</span>}
         <ChevronDown aria-hidden className={`size-4 shrink-0 text-muted transition-transform duration-200 ease-[var(--ease-out)] ${open ? "rotate-180" : ""}`} />
       </button>
       {/* keeps the form's own "please choose" check */}
@@ -244,6 +311,7 @@ export function Select({ value, onChange, children, className = "", disabled, re
             aria-label={aria["aria-label"]}
             aria-labelledby={aria["aria-label"] ? undefined : aria.id ?? `${id}-button`}
             aria-activedescendant={active >= 0 ? `${id}-${active}` : undefined}
+            aria-multiselectable={multiple || undefined}
             onToggle={(e) => {
               setOpen(e.newState === "open");
               if (e.newState === "closed") closedAt.current = performance.now();
@@ -259,14 +327,14 @@ export function Select({ value, onChange, children, className = "", disabled, re
                   id={`${id}-${i}`}
                   data-i={i}
                   role="option"
-                  aria-selected={i === picked}
+                  aria-selected={isPicked(o, i)}
                   aria-disabled={o.disabled || undefined}
                   onPointerMove={() => !o.disabled && active !== i && setActive(i)}
                   onClick={() => choose(i)}
-                  className={`flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 select-none ${i === active ? "bg-sunken" : ""} ${o.disabled ? "opacity-45" : ""} ${i === picked ? "font-medium text-ink" : ""}`}
+                  className={`flex cursor-default items-center gap-2 rounded-md px-2.5 py-2 select-none ${i === active ? "bg-sunken" : ""} ${o.disabled ? "opacity-45" : ""} ${isPicked(o, i) ? "font-medium text-ink" : ""}`}
                 >
                   <span className="min-w-0 flex-1 truncate">{o.label || " "}</span>
-                  <Check aria-hidden className={`size-4 shrink-0 text-gold-ink ${i === picked ? "" : "invisible"}`} />
+                  <Check aria-hidden className={`size-4 shrink-0 text-gold-ink ${isPicked(o, i) ? "" : "invisible"}`} />
                 </div>
               </li>
             ))}

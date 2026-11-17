@@ -6,7 +6,7 @@
 //   GET  /api/google/callback    Google sends them back here (no sign-in header; a signed state instead)
 //   GET  /api/google/status      → { email } or { email: null }
 //   POST /api/google/disconnect
-//   GET  /api/google/events      the next 60 days
+//   GET  /api/google/events      ?from=2026-11-01&to=2026-12-13 (Manila days, up to 100), else the next 60 days
 //   POST /api/google/book        { title, start: "2026-11-20T14:00", minutes, location?, guest?, notes?, lead_id? }
 //   POST /api/google/cancel      { id }
 // Needs GOOGLE_CLIENT_ID (var) and GOOGLE_CLIENT_SECRET (secret).
@@ -121,10 +121,20 @@ export async function disconnect(env) {
   return json({ ok: true });
 }
 
-export async function events(env) {
+// a window of Manila days the calendar asks for, if it's a sane one
+export function manilaDays(from, to) {
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  if (!day.test(from ?? "") || !day.test(to ?? "")) return null;
+  const a = Date.parse(`${from}T00:00:00+08:00`);
+  const b = Date.parse(`${to}T00:00:00+08:00`) + 864e5;
+  return a < b && b - a <= 100 * 864e5 ? { timeMin: new Date(a).toISOString(), timeMax: new Date(b).toISOString() } : null;
+}
+
+export async function events(env, url) {
+  const range = manilaDays(url.searchParams.get("from"), url.searchParams.get("to"));
   const p = new URLSearchParams({
-    timeMin: new Date().toISOString(),
-    timeMax: new Date(Date.now() + 60 * 864e5).toISOString(),
+    timeMin: range?.timeMin ?? new Date().toISOString(),
+    timeMax: range?.timeMax ?? new Date(Date.now() + 60 * 864e5).toISOString(),
     singleEvents: "true",
     orderBy: "startTime",
     maxResults: "250",

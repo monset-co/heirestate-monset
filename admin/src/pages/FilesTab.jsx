@@ -5,7 +5,7 @@ import { CircleCheck, CircleDot, CircleX, Circle, Download, FileText, FileImage,
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, SkeletonRows, toast } from "../motion";
-import { Empty, ErrorNote, btnGhost, card, input, Select } from "../ui";
+import { Empty, ErrorNote, btnGhost, card, input, Select, ask } from "../ui";
 import { CHECKLIST, FOLDERS, ON_THE_CLOCK, PAPERS_DAYS, ago, papersDue } from "../crm";
 
 const PdfDeck = lazy(() => import("../PdfDeck"));
@@ -112,7 +112,7 @@ export default function FilesTab({ leadId, lead, onChecked }) {
   }
 
   async function remove(f) {
-    if (!confirm(`Delete "${f.file_name}"? It can't be undone.`)) return;
+    if (!(await ask({ title: `Delete “${f.file_name}”?`, body: "It can't be undone.", yes: "Delete", danger: true }))) return;
     try {
       await run(supabase.storage.from(FILES).remove([f.file_path]));
       await run(supabase.from("lead_files").delete().eq("id", f.id));
@@ -126,7 +126,7 @@ export default function FilesTab({ leadId, lead, onChecked }) {
   async function view(f, present = false) {
     const kind = kindOf(f.file_name);
     // a client's papers are personal data: say so before one leaves for Microsoft's servers
-    if (kind === "office" && !confirm("Word, Excel and PowerPoint files open in Microsoft's Office viewer, which fetches the file through a link that lasts 10 minutes. Open it?")) return;
+    if (kind === "office" && !(await ask({ title: "Open in Microsoft's viewer?", body: "Word, Excel and PowerPoint files open in Microsoft's Office viewer, which fetches the file through a link that lasts 10 minutes.", yes: "Open it" }))) return;
     try {
       const url = await signed(f, kind === "office" ? 600 : 300);
       if (kind) setOpen({ file: f, url, present });
@@ -170,7 +170,7 @@ export default function FilesTab({ leadId, lead, onChecked }) {
   async function check(item, status) {
     let reason = null;
     if (status === "rejected") {
-      reason = prompt(`Why is ${FOLDERS[item]} rejected? (blurry ID, expired, wrong month's payslip…)`)?.trim();
+      reason = await ask({ title: `Why is ${FOLDERS[item]} rejected?`, input: { placeholder: "Blurry ID, expired, wrong month's payslip…" }, yes: "Reject", danger: true });
       if (!reason) return;
     }
     let next;
