@@ -28,7 +28,8 @@ export const SIZES = {
 };
 
 // Where: Cebu City's districts, then the other cities. A name matches a property's location
-// when it, or one of its other names, appears in it.
+// when it, or one of its other names, appears in it. Buildings come from the inventory itself
+// (each property's Building), so a new one is a choice as soon as it's in.
 export const AREAS = {
   "Cebu City": {
     "IT Park": /it park|apas|lahug/i,
@@ -57,9 +58,52 @@ export const AREAS = {
     Naga: /naga/i,
   },
 };
-const AREA = Object.assign({}, ...Object.values(AREAS));
+export const AREA = Object.assign({}, ...Object.values(AREAS));
 
-export const WISHES = ["kind", "size", "area", "furnishing", "budget", "when"];
+export const WISHES = ["kind", "size", "area", "near", "furnishing", "budget", "when"];
+
+// Places a client may want to be near, positioned by OpenStreetMap (scripts/inventory_geocode.py
+// --landmarks). Distances are straight-line, as "within 2 km of IT Park" is meant.
+export const LANDMARKS = {
+  "Business districts": {
+    "Cebu IT Park": [10.3308, 123.90683],
+    "Cebu Business Park": [10.31617, 123.90586],
+    "South Road Properties (SRP)": [10.28655, 123.887],
+    "Cebu Provincial Capitol": [10.31629, 123.89001],
+    "Fuente Osmeña Circle": [10.30997, 123.89248],
+  },
+  Malls: {
+    "Ayala Center Cebu": [10.31781, 123.90458],
+    "SM City Cebu": [10.3114, 123.91778],
+    "SM Seaside City Cebu": [10.28127, 123.87958],
+    "Robinsons Galleria Cebu": [10.30437, 123.91128],
+    "Il Corso": [10.26643, 123.87781],
+  },
+  Hospitals: {
+    "Cebu Doctors' University Hospital": [10.31446, 123.89193],
+    "Chong Hua Hospital": [10.31005, 123.89111],
+    "Perpetual Succour Hospital": [10.31499, 123.89963],
+  },
+  Schools: {
+    "University of San Carlos (Talamban)": [10.35594, 123.90715],
+    "University of Cebu (Banilad)": [10.33815, 123.91147],
+    "Cebu International School": [10.39312, 123.9209],
+  },
+  Travel: {
+    "Mactan-Cebu Airport": [10.31034, 123.97931],
+  },
+};
+export const LANDMARK = Object.assign({}, ...Object.values(LANDMARKS));
+export const RADII = [0.5, 1, 2, 3, 5, 10];
+
+// kilometres between two [lat, lng] points (haversine)
+export function km([a, b], [c, d]) {
+  const r = (x) => (x * Math.PI) / 180;
+  const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+// how far a property is from a landmark, or null when either has no position
+export const distance = (p, place) => (p.lat != null && LANDMARK[place] ? km([p.lat, p.lng], LANDMARK[place]) : null);
 export const FURNISHING = ["Fully furnished", "Furnished", "Semi-furnished", "Finished", "Unfurnished"];
 
 // Which of a lead's wishes a property meets: { status, kind, size, area, furnishing, budget, when },
@@ -73,7 +117,10 @@ export function fit(lead, p, today = new Date().toISOString().slice(0, 10)) {
     status: statuses.length ? p.status.some((s) => statuses.includes(s)) : null,
     kind: kinds.length ? kinds.some((k) => KINDS[k].test(type)) : null,
     size: sizes.length ? sizes.some((k) => SIZES[k].test(type)) : null,
-    area: lead.areas?.length ? lead.areas.some((a) => AREA[a]?.test(p.location ?? "")) : null,
+    // a district or city by its name in the location; a building by the property's Building
+    area: lead.areas?.length ? lead.areas.some((a) => p.building === a || AREA[a]?.test(p.location ?? "")) : null,
+    // a property with no position yet can't be shown near; it doesn't count against, it just doesn't count
+    near: lead.near && lead.near_km ? (distance(p, lead.near) ?? Infinity) <= lead.near_km : null,
     furnishing: lead.furnishings?.length ? lead.furnishings.includes(p.furnishing) : null,
     budget: lead.budget_max ? p.price != null && p.price <= lead.budget_max : null,
     // free by the day they need it: available now, or freeing up on or before it
@@ -82,6 +129,7 @@ export function fit(lead, p, today = new Date().toISOString().slice(0, 10)) {
   // still on offer, of a kind they asked for; the rest only ranks
   const offered = p.status.some((s) => ["Pre-selling", "For Rent", "For Sale", "For Assume"].includes(s)) || p.available_from > today;
   r.ok = offered && r.status !== false;
+  r.km = lead.near ? distance(p, lead.near) : null;
   r.score = WISHES.filter((k) => r[k] === true).length; // wishes met, for ranking
   // the wishes the team marked as what matters most: how many are met, and whether all are
   const prio = (lead.priorities ?? []).filter((k) => r[k] !== null);

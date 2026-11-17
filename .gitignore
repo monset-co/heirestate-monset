@@ -13,3 +13,6 @@ resources/
 *.xlsx
 inventory-import.sql
 leads-import.sql
+geocode-cache.json
+inventory-geo.sql
+__pycache__/

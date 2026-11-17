@@ -2,12 +2,12 @@
 // referral or a walk-in), or any lead's details corrected. What they want is picked from fixed
 // choices (admin/src/match.js), never typed, so the lead can be matched against the inventory and
 // the same wish always reads the same way.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase, run } from "../supabase";
 import { toast } from "../motion";
 import { ErrorNote, Field, Select, btn, input } from "../ui";
 import { CATEGORIES, SOURCES } from "../crm";
-import { AREAS, FURNISHING, KINDS, LOOKING_TO, SIZES, pesos, tidyMobile } from "../match";
+import { AREAS, FURNISHING, KINDS, LANDMARKS, LOOKING_TO, RADII, SIZES, pesos, tidyMobile } from "../match";
 
 const START = { "pre-selling": ["Buy pre-selling"], rentals: ["Rent"], brokerage: ["Buy resale"] };
 const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
@@ -28,9 +28,19 @@ export default function LeadForm({ lead, onSaved }) {
     furnishings: lead.furnishings ?? [],
     budget: lead.budget_max ? peso(lead.budget_max) : "",
     needed_by: lead.needed_by ?? "",
+    near: lead.near ?? "",
+    near_km: lead.near_km ? String(lead.near_km) : "2",
   }));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // the buildings in the inventory today: a new one there is a choice here at once
+  const [buildings, setBuildings] = useState([]);
+  useEffect(() => {
+    run(supabase.from("inventory").select("building").not("building", "is", null)).then(
+      (rows) => setBuildings([...new Set(rows.map((r) => r.building))].sort((a, b) => a.localeCompare(b))),
+      () => {}
+    );
+  }, []);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const handAdded = isNew || lead.source_site in SOURCES; // a site's form keeps its source
   const budget = pesos(f.budget);
@@ -54,6 +64,8 @@ export default function LeadForm({ lead, onSaved }) {
       furnishings: f.furnishings,
       budget_max: budget,
       needed_by: f.needed_by || null,
+      near: f.near || null,
+      near_km: f.near ? Number(f.near_km) : null,
     };
     if (handAdded) out.source_site = f.source_site;
     setBusy(true);
@@ -114,6 +126,20 @@ export default function LeadForm({ lead, onSaved }) {
             {Object.entries(AREAS).map(([g, list]) => (
               <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
             ))}
+            <optgroup label="Buildings">{[...new Set([...buildings, ...f.areas.filter((a) => !Object.values(AREAS).some((g) => a in g))])].map((b) => <option key={b} value={b}>{b}</option>)}</optgroup>
+          </Select>
+        </Field>
+        <Field label="Near" hint="A place they want to be close to">
+          <Select value={f.near} onChange={set("near")} className={input}>
+            <option value="">Nowhere in particular</option>
+            {Object.entries(LANDMARKS).map(([g, list]) => (
+              <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Within">
+          <Select value={f.near_km} onChange={set("near_km")} disabled={!f.near} className={input}>
+            {RADII.map((k) => <option key={k} value={String(k)}>{k < 1 ? `${k * 1000} m` : `${k} km`}</option>)}
           </Select>
         </Field>
         <Field label="Furnishing">

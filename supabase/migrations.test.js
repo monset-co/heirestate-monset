@@ -202,6 +202,12 @@ assert.equal((await stranger("select count(*)::int n from inventory"))[0].n, 0);
 await fails(() => anon("select * from inventory"), /permission denied/);
 await fails(() => admin("insert into inventory (status) values ('{Leased}')"), /check constraint/);
 
+// a position comes whole (both numbers and how it was found), in Cebu
+await admin("update inventory set lat = 10.33, lng = 123.906, geo = 'exact' where location = 'IT Park'");
+await fails(() => admin("update inventory set lat = 10.33, lng = null, geo = 'exact' where location = 'IT Park'"), /position_whole/);
+await fails(() => admin("update inventory set lat = 14.6, lng = 121 where location = 'IT Park'"), /check constraint/);
+await admin("update leads set near = 'Cebu IT Park', near_km = 2, priorities = '{near}' where name = 'Cy Tan'");
+
 // the Google refresh token is the Worker's alone, even for a signed-in admin
 await db.exec("insert into google_account (email, refresh_token, connected_by) values ('heirestates.fh@gmail.com', 'secret', 'x')");
 await fails(() => admin("select refresh_token from google_account"), /permission denied/);

@@ -230,6 +230,7 @@ function Overview({ lead, onSaved }) {
     ["Looking to", lead.looking_to, "navy"],
     ["Type", lead.property_types, "violet"],
     ["Where", lead.areas, "sky"],
+    ["Near", lead.near ? [`within ${lead.near_km < 1 ? `${lead.near_km * 1000} m` : `${lead.near_km} km`} of ${lead.near}`] : [], "sky"],
     ["Furnishing", lead.furnishings, "emerald"],
     ["Budget", lead.budget_max ? [`up to ${peso(lead.budget_max)}${lead.looking_to?.includes("Rent") ? "/mo" : ""}`] : lead.budget ? [lead.budget] : [], "gold"],
     ["Needed by", lead.needed_by ? [new Date(`${lead.needed_by}T00:00`).toLocaleDateString("en-PH", { month: "long", day: "numeric", year: "numeric" })] : [], "burgundy"],

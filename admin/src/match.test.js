@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fit, matches, tidyMobile, pesos } from "./match.js";
+import { fit, km, matches, tidyMobile, pesos } from "./match.js";
 
 const p = (o) => ({ status: ["For Rent"], type: "", location: "", furnishing: null, price: null, available: true, available_from: null, ...o });
 
@@ -33,6 +33,25 @@ test("lots aren't houses and lots", () => {
   assert.equal(fit(lead, p({ type: "Lot" })).kind, true);
   assert.equal(fit(lead, p({ type: "Corner Lot, Subdivision" })).kind, true);
   assert.equal(fit(lead, p({ type: "House & Lot, 3BR" })).kind, false);
+});
+
+test("a building by the property's Building", () => {
+  const lead = { areas: ["West Jones Residences"] };
+  assert.equal(fit(lead, p({ building: "West Jones Residences", location: "Westjones, Uytengsu St." })).area, true);
+  assert.equal(fit(lead, p({ building: "Casa Mira Towers Mandaue" })).area, false);
+  assert.equal(fit({ areas: ["Lahug"] }, p({ building: "Marco Polo Residences", location: "Nivel Hills, Lahug" })).area, true, "districts still by location");
+});
+
+test("near a landmark, within a radius", () => {
+  // IT Park to Ayala is about 1.45 km
+  assert.ok(Math.abs(km([10.3308, 123.90683], [10.31781, 123.90458]) - 1.45) < 0.05);
+  const lead = { near: "Cebu IT Park", near_km: 1 };
+  const close = fit(lead, p({ lat: 10.3325, lng: 123.9055 }));
+  assert.equal(close.near, true);
+  assert.ok(close.km < 1);
+  assert.equal(fit(lead, p({ lat: 10.31781, lng: 123.90458 })).near, false, "Ayala is 1.45 km away");
+  assert.equal(fit(lead, p({})).near, false, "no position, can't be near");
+  assert.equal(fit({}, p({ lat: 10.33, lng: 123.9 })).near, null, "they didn't ask");
 });
 
 test("needed by a date", () => {

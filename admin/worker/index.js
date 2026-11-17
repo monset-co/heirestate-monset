@@ -6,6 +6,7 @@
 //   /api/whatsapp/webhook              Meta's WhatsApp messages and statuses (signed, no sign-in)
 //   /api/whatsapp/send, /media/:id     a reply from the admin, a photo or file they sent
 //   /api/google/*                      Google Calendar bookings, and its Gmail read-only (google.js, gmail.js)
+//   /api/geo?q=…                       where a place is, from OpenStreetMap (for a property's pin)
 //   scheduled (every 15 minutes)       emails reminders that have come due
 //   PublicApi.inquiry()                saves an inquiry from the public sites and alerts its agent
 // Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN, GOOGLE_CLIENT_SECRET (wrangler secret put). The rest is in
@@ -101,6 +102,24 @@ async function visits(env, days) {
     .map((g) => ({ host: g.dimensions.requestHost, visits: g.sum.visits, views: g.count }))
     .filter((s) => s.host.endsWith(env.DOMAIN))
     .sort((a, b) => b.visits - a.visits);
+}
+
+// Where a place is in Metro Cebu, from OpenStreetMap's free geocoder (Nominatim): at most five
+// answers, each exact (a building or street) or only the neighbourhood. Cached a week: Nominatim
+// asks for no more than a request a second, and an admin looks the same place up again.
+async function geo(q) {
+  const text = String(q ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  if (text.length < 3) return fail("Type a place to look up");
+  const key = `https://cache.internal/geo/${encodeURIComponent(text.toLowerCase())}`;
+  const hit = await caches.default.match(key);
+  if (hit) return hit;
+  const p = new URLSearchParams({ q: /cebu|mandaue|lapu|talisay|minglanilla|consolacion|liloan|naga|cordova/i.test(text) ? text : `${text}, Cebu`, format: "jsonv2", countrycodes: "ph", viewbox: "123.55,10.55,124.15,10.05", bounded: "1", limit: "5" });
+  const r = await fetch(`https://nominatim.openstreetmap.org/search?${p}`, { headers: { "User-Agent": "realestate-admin-geocoder/1.0", "Accept-Language": "en" } });
+  if (!r.ok) return fail("The map service is busy. Try again in a moment.", 503);
+  const places = (await r.json()).map((h) => ({ name: h.display_name, lat: Number(h.lat), lng: Number(h.lon), exact: Number(h.place_rank) >= 26 }));
+  const res = Response.json({ places }, { headers: { "Cache-Control": "max-age=604800" } });
+  await caches.default.put(key, res.clone());
+  return res;
 }
 
 // Reminders that have come due and not been emailed: one email each to its agent (or every admin)
@@ -225,6 +244,7 @@ export default {
           return fail(e.message, e.status); // "not connected" and Google's own refusals, worded for the admin
         }
       }
+      if (path === "geo" && req.method === "GET") return await geo(url.searchParams.get("q"));
       if (path === "visits" && req.method === "GET") {
         const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
         if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return fail("Site visits aren't set up yet (CF_API_TOKEN, CF_ACCOUNT_ID)", 501);

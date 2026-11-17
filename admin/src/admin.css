@@ -258,6 +258,20 @@
   }
 }
 
+/* The map's movable pin: a navy teardrop with a gold centre, its point on the spot. */
+.map-pin {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--color-navy);
+  box-shadow: 0 2px 6px rgb(12 21 38 / 0.35), inset 0 0 0 5px var(--color-navy), inset 0 0 0 9px var(--color-gold);
+}
+.leaflet-container {
+  font: inherit;
+}
+
 /* Sticky notes on a lead: paper colours, a soft lift, and a strip of tape on pinned ones. */
 .sticky-yellow { background: #fbeaa8; }
 .sticky-pink { background: #f7d3d6; }

@@ -25,6 +25,7 @@ const CRITERIA = [
   ["kind", "Type", "violet"],
   ["size", "Size", "violet"],
   ["area", "Where", "sky"],
+  ["near", "Near", "sky"],
   ["furnishing", "Furnishing", "emerald"],
   ["budget", "Budget", "gold"],
   ["when", "Free in time", "burgundy"],
@@ -39,11 +40,11 @@ export default function Matches({ lead }) {
   const [priorities, setPriorities] = useState(lead.priorities ?? []);
   const [onlyPrio, setOnlyPrio] = useState(false);
   const statuses = lead.looking_to?.length ? lead.looking_to.flatMap((w) => LOOKING_TO[w] ?? []) : START[lead.category];
-  const key = JSON.stringify([statuses, lead.property_types, lead.areas, lead.furnishings, lead.budget_max, lead.needed_by]);
+  const key = JSON.stringify([statuses, lead.property_types, lead.areas, lead.furnishings, lead.budget_max, lead.needed_by, lead.near, lead.near_km]);
 
   useEffect(() => {
     if (!statuses.length) return setList([]);
-    run(supabase.from("inventory").select("id, status, type, location, price, price_text, furnishing, available, available_from").overlaps("status", statuses)).then(
+    run(supabase.from("inventory").select("id, status, type, location, building, price, price_text, furnishing, available, available_from, lat, lng, geo").overlaps("status", statuses)).then(
       setRows,
       (e) => setError(e.message)
     );
@@ -119,7 +120,10 @@ export default function Matches({ lead }) {
                 <Link to={`/inventory?open=${p.id}`} className="group grid gap-2 px-4 py-3 text-sm transition-colors hover:bg-bg sm:grid-cols-[1fr_auto] sm:items-center">
                   <div className="min-w-0">
                     <p className="truncate font-medium text-fg group-hover:text-accent-ink">{p.type || "Property"}</p>
-                    <p className="truncate text-xs text-muted">{p.location}</p>
+                    <p className="truncate text-xs text-muted">
+                      {f.km != null && <span className="font-medium text-fg tabular-nums">{f.km.toFixed(1)} km{p.geo === "approx" ? " ≈" : ""} from {lead.near} · </span>}
+                      {p.location}
+                    </p>
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {asked.filter(([k]) => f[k] !== null).map(([k, label, tone]) => (
                         <Chip key={k} tone={f[k] ? tone : "off"}>

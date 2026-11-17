@@ -3,10 +3,14 @@
 // shows on a site. A row opens its full record to read, copy the post summary from, or edit.
 import { Copy, ExternalLink, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Chip } from "./Matches";
+import { AREA, AREAS, LANDMARK, LANDMARKS, RADII, distance } from "../match";
+import MapView, { PIN } from "../MapView";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
-import { SkeletonRows, toast } from "../motion";
+import { api } from "../api";
+import { SkeletonRows, spring, toast } from "../motion";
 import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask } from "../ui";
 
 const STATUSES = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
@@ -18,6 +22,10 @@ const TABS = [
 ];
 const TONE = { "Pre-selling": "new", "For Rent": "available", "For Sale": "available", "For Assume": "reserved", Reserved: "reserved", Rented: "lost", Sold: "sold", Unavailable: "hidden" };
 const OPEN = ["Pre-selling", "For Rent", "For Sale", "For Assume"]; // still on offer
+// a pin's colour on the map, by what's happening with it (the legend under the map says so)
+const pinOf = (r) => (r.status.includes("Pre-selling") ? PIN.pre : r.status.some((s) => ["For Rent", "For Sale"].includes(s)) && r.available !== false ? PIN.open : r.status.some((s) => ["Reserved", "For Assume"].includes(s)) ? PIN.held : PIN.gone);
+// where a place is, through the admin's Worker (OpenStreetMap)
+const lookUp = (q) => api(`geo?q=${encodeURIComponent(q)}`).then((r) => r.places);
 const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
 const rentOnly = (r) => r.status.some((s) => s === "For Rent" || s === "Rented") && !r.status.some((s) => s === "For Sale" || s === "Sold" || s === "Pre-selling");
 const priceOf = (r) => (r.price != null ? `${peso(r.price)}${rentOnly(r) ? "/mo" : ""}` : r.price_text ?? "—");
@@ -28,7 +36,8 @@ export default function Inventory() {
   const tab = TABS.find((t) => t.id === params.get("tab")) ?? TABS[2];
   const [list, setList] = useState(null);
   const [error, setError] = useState("");
-  const [q, setQ] = useState({ text: "", status: "open", max: "", furnishing: "", when: "", pets: false });
+  const [q, setQ] = useState({ text: "", status: "open", max: "", furnishing: "", when: "", pets: false, where: "", near: "", km: "2" });
+  const [view, setView] = useState("table"); // or "map"
   const [open, setOpen] = useState(null); // the row being read or edited; {} for a new one
   const [editing, setEditing] = useState(false);
   const show = (row, edit = false) => {
@@ -46,6 +55,8 @@ export default function Inventory() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // every building in the inventory, A to Z: the filter's choices and the form's suggestions
+  const buildings = useMemo(() => [...new Set((list ?? []).map((r) => r.building).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [list]);
   const inTab = (t, r) => !t.has || r.status.some((s) => t.has.includes(s));
   // ponytail: the whole inventory filtered in the browser; move to SQL past a few thousand rows
   const shown = useMemo(() => {
@@ -58,12 +69,15 @@ export default function Inventory() {
         (q.status === "" ||
           (q.status === "open" ? (r.status.some((s) => OPEN.includes(s)) && r.available !== false) || r.available_from > today : q.status === "both" ? r.status.includes("For Rent") && (r.status.includes("For Sale") || r.status.includes("For Assume")) : r.status.includes(q.status))) &&
         (!q.furnishing || r.furnishing === q.furnishing) &&
+        (!q.where || r.building === q.where || AREA[q.where]?.test(r.location ?? "")) &&
+        (!q.near || (distance(r, q.near) ?? Infinity) <= Number(q.km)) &&
         (!q.pets || r.pet_friendly === "yes") &&
         (!q.when || (q.when === "now" ? r.available === true && !(r.available_from > today) : r.available_from > today)) &&
         (!max || (r.price != null && r.price <= max)) &&
         words.every((w) => [r.type, r.location, r.source, r.specs, r.furnishing, r.rph_code, r.fh_code, r.price_text].join(" ").toLowerCase().includes(w))
     );
-    // coming up: soonest first
+    // near a place: closest first; coming up: soonest first
+    if (q.near) return rows.sort((a, b) => distance(a, q.near) - distance(b, q.near));
     return q.when === "later" ? rows.sort((a, b) => a.available_from.localeCompare(b.available_from)) : rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, q, tab.id]);
@@ -106,6 +120,13 @@ export default function Inventory() {
         <input aria-label="Highest price" inputMode="numeric" placeholder="Up to ₱ (their budget)" value={q.max} onChange={set("max")} className={`${input} sm:w-48`} />
       </div>
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Select aria-label="Filter by area or building" value={q.where} onChange={set("where")} className={`${input} sm:w-60`}>
+          <option value="">Anywhere</option>
+          {Object.entries(AREAS).map(([g, list]) => (
+            <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
+          ))}
+          <optgroup label="Buildings">{buildings.map((b) => <option key={b} value={b}>{b}</option>)}</optgroup>
+        </Select>
         <Select aria-label="Filter by furnishing" value={q.furnishing} onChange={set("furnishing")} className={`${input} sm:w-48`}>
           <option value="">Any furnishing</option>
           {FURNISHING.slice(1).map((o) => <option key={o} value={o}>{o}</option>)}
@@ -115,6 +136,17 @@ export default function Inventory() {
           <option value="now">Available now</option>
           <option value="later">To be available (has a date)</option>
         </Select>
+        <Select aria-label="Near a place" value={q.near} onChange={set("near")} className={`${input} sm:w-60`}>
+          <option value="">Near anywhere</option>
+          {Object.entries(LANDMARKS).map(([g, list]) => (
+            <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>Near {k}</option>)}</optgroup>
+          ))}
+        </Select>
+        {q.near && (
+          <Select aria-label="Within" value={q.km} onChange={set("km")} className={`${input} sm:w-32`}>
+            {RADII.map((k) => <option key={k} value={String(k)}>within {k < 1 ? `${k * 1000} m` : `${k} km`}</option>)}
+          </Select>
+        )}
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={q.pets} onChange={(e) => setQ({ ...q, pets: e.target.checked })} className="size-4 accent-navy" /> Pet-friendly only
         </label>
@@ -122,6 +154,14 @@ export default function Inventory() {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <ErrorNote error={error} />
+        <div role="radiogroup" aria-label="Show as" className="flex rounded-full border border-line bg-surface p-0.5">
+          {[["table", "Table"], ["map", "Map"]].map(([k, l]) => (
+            <button key={k} type="button" role="radio" aria-checked={view === k} onClick={() => setView(k)} className={`relative rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors duration-150 ${view === k ? "text-cream" : "text-muted hover:text-fg"}`}>
+              {view === k && <motion.span layoutId="inv-view" transition={spring} className="absolute inset-0 rounded-full bg-navy" />}
+              <span className="relative">{l}</span>
+            </button>
+          ))}
+        </div>
         {/* the legend: what the status colours mean */}
         <p className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted" aria-label="Legend">
           <Badge value="available">On offer</Badge>
@@ -134,8 +174,23 @@ export default function Inventory() {
       </div>
 
       {/* keyed by tab: a new tab's rows rise in rather than snap */}
-      <TabPanel key={tab.id} className={`${card} mt-4 overflow-x-auto`}>
-        {!list ? (
+      <TabPanel key={`${tab.id}:${view}`} className={`${card} mt-4 overflow-x-auto`}>
+        {view === "map" && list ? (
+          <div className="grid gap-2 p-3">
+            <MapView
+              className="h-[65vh]"
+              pins={shown.filter((r) => r.lat != null).map((r) => ({ id: r.id, lat: r.lat, lng: r.lng, color: pinOf(r), label: `${r.type || "Property"} · ${priceOf(r)}`, row: r }))}
+              ring={q.near ? { at: LANDMARK[q.near], km: Number(q.km), name: q.near } : null}
+              onPin={(p) => show(p.row)}
+            />
+            <p className="flex flex-wrap items-center gap-3 px-1 text-xs text-muted">
+              {[["open", "On offer"], ["pre", "Pre-selling"], ["held", "Reserved or assume"], ["gone", "Rented, sold or unavailable"]].map(([k, l]) => (
+                <span key={k} className="flex items-center gap-1.5"><span className="size-2.5 rounded-full" style={{ background: PIN[k] }} /> {l}</span>
+              ))}
+              {shown.some((r) => r.lat == null) && <span className="ml-auto">{shown.filter((r) => r.lat == null).length} not on the map yet: open one and set its pin</span>}
+            </p>
+          </div>
+        ) : !list ? (
           <SkeletonRows />
         ) : !shown.length ? (
           <Empty>{list.length ? "Nothing matches." : "No properties yet. Add your first one."}</Empty>
@@ -144,6 +199,7 @@ export default function Inventory() {
             <thead className="border-b border-line">
               <tr>
                 <th className={th}>Property</th>
+                {q.near && <th className={`${th} text-right`}>Distance</th>}
                 <th className={`${th} text-right`}>Price</th>
                 <th className={`${th} hidden md:table-cell`}>Furnishing</th>
                 <th className={th}>Status</th>
@@ -158,6 +214,7 @@ export default function Inventory() {
                     </button>
                     <p className="truncate text-xs text-muted">{[r.location, r.source].filter(Boolean).join(" · ")}</p>
                   </td>
+                  {q.near && <td className="px-4 py-3 text-right whitespace-nowrap text-muted tabular-nums">{distance(r, q.near).toFixed(1)} km{r.geo === "approx" && <span title="Only the neighbourhood is known"> ≈</span>}</td>}
                   <td className="max-w-48 truncate px-4 py-3 text-right tabular-nums whitespace-nowrap" title={r.price_note ?? undefined}>{priceOf(r)}</td>
                   <td className="hidden px-4 py-3 whitespace-nowrap md:table-cell">{r.furnishing ? <Chip tone="emerald">{r.furnishing}</Chip> : <span className="text-muted">—</span>}</td>
                   <td className="px-4 py-3">
@@ -176,7 +233,7 @@ export default function Inventory() {
       {list && shown.length > 0 && <p className="mt-2 text-xs text-muted">{shown.length} shown</p>}
 
       <Modal open={!!open} onClose={() => setOpen(null)} title={open?.id ? open.type || "Property" : "Add property"}>
-        {open && (editing ? <PropertyForm row={open} onSaved={saved} /> : <PropertyView row={open} onEdit={() => setEditing(true)} />)}
+        {open && (editing ? <PropertyForm row={open} onSaved={saved} buildings={buildings} /> : <PropertyView row={open} onEdit={() => setEditing(true)} />)}
       </Modal>
     </>
   );
@@ -212,7 +269,16 @@ function PropertyView({ row: r, onEdit }) {
           <MapPin className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden /> {r.location}
         </p>
       )}
+      {r.lat != null ? (
+        <div className="grid gap-1">
+          <MapView className="h-48" zoom={16} pins={[{ id: r.id, lat: r.lat, lng: r.lng, color: pinOf(r) }]} />
+          {r.geo === "approx" && <p className="text-xs text-muted">Only the neighbourhood is known. Edit to drag the pin onto the building.</p>}
+        </div>
+      ) : (
+        <p className="text-xs text-muted">Not on the map yet. Edit to find it or drop a pin.</p>
+      )}
       <div className="flex flex-wrap gap-1.5">
+        {r.building && <Chip tone="sky">{r.building}</Chip>}
         {r.furnishing && <Chip tone="emerald">{r.furnishing}</Chip>}
         <Chip tone={r.available_from > today ? "burgundy" : r.available === false ? "off" : "sky"}>
           {r.available_from > today ? `Free from ${date(r.available_from)}` : r.available === false ? "Not available" : "Available now"}
@@ -259,9 +325,9 @@ function PropertyView({ row: r, onEdit }) {
 }
 
 const FURNISHING = ["", "Fully furnished", "Semi-furnished", "Furnished", "Finished", "Unfurnished"];
-const TEXT = ["type", "location", "price_text", "price_note", "furnishing", "specs", "inclusions", "payment_terms", "notes", "summary", "source", "source_url", "fb_post_note", "fb_post_url", "rph_code", "rph_url", "fh_code", "fh_url", "available_from", "fb_posted_on"];
+const TEXT = ["type", "location", "building", "price_text", "price_note", "furnishing", "specs", "inclusions", "payment_terms", "notes", "summary", "source", "source_url", "fb_post_note", "fb_post_url", "rph_code", "rph_url", "fh_code", "fh_url", "available_from", "fb_posted_on"];
 
-function PropertyForm({ row, onSaved }) {
+function PropertyForm({ row, onSaved, buildings = [] }) {
   const [f, setF] = useState(() => ({
     ...Object.fromEntries(TEXT.map((k) => [k, row[k] ?? ""])),
     status: row.status ?? [],
@@ -271,7 +337,10 @@ function PropertyForm({ row, onSaved }) {
     rapa: !!row.rapa,
     ats: !!row.ats,
     pictures: !!row.pictures,
+    pos: row.lat != null ? [row.lat, row.lng] : null,
+    geo: row.geo ?? null,
   }));
+  const [found, setFound] = useState(""); // what OpenStreetMap matched, shown under the map
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
@@ -290,7 +359,19 @@ function PropertyForm({ row, onSaved }) {
       rapa: f.rapa,
       ats: f.ats,
       pictures: f.pictures,
+      lat: f.pos?.[0] ?? null,
+      lng: f.pos?.[1] ?? null,
+      geo: f.pos ? f.geo : null,
     };
+    // no building given, but the location names one the inventory knows: that's its building
+    if (!out.building && out.location) out.building = buildings.find((b) => out.location.toLowerCase().includes(b.toLowerCase())) ?? null;
+    // look the position up on the way in: a new property with no pin, or a changed location whose
+    // pin wasn't placed by hand (quietly: no answer just means no pin, never an old, wrong one)
+    const moved = row.id && out.location !== (row.location ?? null) && f.geo !== "pinned";
+    if (out.location && ((!row.id && !f.pos) || moved)) {
+      const hit = (await lookUp(out.location).catch(() => []))[0];
+      Object.assign(out, hit ? { lat: hit.lat, lng: hit.lng, geo: hit.exact ? "exact" : "approx" } : moved ? { lat: null, lng: null, geo: null } : {});
+    }
     try {
       const q = row.id ? supabase.from("inventory").update(out).eq("id", row.id) : supabase.from("inventory").insert(out);
       onSaved(await run(q.select().single()));
@@ -299,6 +380,18 @@ function PropertyForm({ row, onSaved }) {
       setError(/check constraint .*url/.test(err.message) ? "Links must start with https://" : err.message);
     }
     setBusy(false);
+  }
+
+  async function find() {
+    setError("");
+    try {
+      const [hit] = await lookUp(f.location);
+      if (!hit) return setError("OpenStreetMap couldn't find that location. Click the map where it is instead.");
+      setF((x) => ({ ...x, pos: [hit.lat, hit.lng], geo: hit.exact ? "exact" : "approx" }));
+      setFound(`${hit.exact ? "Found" : "Only the neighbourhood was found"}: ${hit.name.split(",").slice(0, 3).join(",")}`);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   async function remove() {
@@ -351,6 +444,12 @@ function PropertyForm({ row, onSaved }) {
         <Field label="Location">
           <input value={f.location} onChange={set("location")} maxLength={500} className={input} />
         </Field>
+        <Field label="Building" hint="A condo or development: pick one, or type a new name">
+          <input value={f.building} onChange={set("building")} list="inventory-buildings" maxLength={120} autoComplete="off" placeholder="None" className={input} />
+          <datalist id="inventory-buildings">
+            {buildings.map((b) => <option key={b} value={b} />)}
+          </datalist>
+        </Field>
         <Field label="Price (₱)" hint="Sale price, or rent per month">
           <input inputMode="numeric" value={f.price} onChange={set("price")} className={`${input} tabular-nums`} />
         </Field>
@@ -398,6 +497,21 @@ function PropertyForm({ row, onSaved }) {
             <Copy className="size-4" aria-hidden /> Copy summary
           </button>
         )}
+      </div>
+
+      <h3 className="mt-2 font-display text-lg text-ink">On the map</h3>
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={btnGhost} onClick={find} disabled={!f.location.trim()}>
+            <MapPin className="size-4" aria-hidden /> Find from the location
+          </button>
+          {f.pos && (
+            <button type="button" className={btnDanger} onClick={() => setF({ ...f, pos: null, geo: null })}>Remove pin</button>
+          )}
+          <span className="text-xs text-muted">{f.pos ? (f.geo === "pinned" ? "Pinned by hand" : f.geo === "approx" ? "Neighbourhood only: drag the pin onto the building" : "Found on OpenStreetMap") : "Or click the map where it is"}</span>
+        </div>
+        <MapView className="h-64" movable={f.pos} onMove={(pos) => setF((x) => ({ ...x, pos, geo: "pinned" }))} />
+        {found && <p className="text-xs text-muted">{found}</p>}
       </div>
 
       <h3 className="mt-2 font-display text-lg text-ink">Source and posts</h3>
