@@ -183,4 +183,15 @@ assert.equal((await gate("nobody@example.com")).error.http_code, 403);
 await admin("insert into settings (key, value) values ('broker_prc_valid_until', '2028-03-31')");
 assert.equal((await anon("select public_listing('corner-lot') j"))[0].j.broker.valid_until, "2028-03-31");
 
+// inventory: admins only, statuses from the fixed set
+await admin("insert into inventory (status, location, price) values ('{For Rent}', 'IT Park', 25000)");
+assert.equal((await stranger("select count(*)::int n from inventory"))[0].n, 0);
+await fails(() => anon("select * from inventory"), /permission denied/);
+await fails(() => admin("insert into inventory (status) values ('{Leased}')"), /check constraint/);
+
+// the Google refresh token is the Worker's alone, even for a signed-in admin
+await db.exec("insert into google_account (email, refresh_token, connected_by) values ('heirestates.fh@gmail.com', 'secret', 'x')");
+await fails(() => admin("select refresh_token from google_account"), /permission denied/);
+await fails(() => anon("select refresh_token from google_account"), /permission denied/);
+
 });

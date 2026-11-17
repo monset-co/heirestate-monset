@@ -212,7 +212,7 @@ function Overview({ lead, onSaved }) {
     ["Interested in", lead.interest],
     ["Listing", lead.listing && <Link key="l" to={`/listings/${lead.listing.id}`} className="underline underline-offset-2">{lead.listing.title}</Link>],
     ["Budget", lead.budget],
-    ["Preferred viewing", lead.viewing_time],
+    ["Preferred viewing", <span key="v">{lead.viewing_time && <>{lead.viewing_time}<br /></>}<Link to={`/calendar?lead=${lead.id}`} className="underline underline-offset-2">Book a viewing</Link></span>],
     ["From", SITES[lead.source_site] ?? lead.source_site],
     ["Consent given", lead.consent_at ? when(lead.consent_at) : lead.source_site === "whatsapp" && "Wrote to us on WhatsApp; no website form"],
   ];

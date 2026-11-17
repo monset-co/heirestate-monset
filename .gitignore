@@ -8,3 +8,7 @@ resources/
 .dev.vars*
 !.env.example
 !.dev.vars.example
+
+# client spreadsheets and their imports hold owners' and buyers' details
+*.xlsx
+inventory-import.sql

@@ -10,6 +10,7 @@
 //                      npx wrangler secret put WA_TOKEN -c wrangler.admin.jsonc         (Meta system user token)
 //                      npx wrangler secret put WA_APP_SECRET -c wrangler.admin.jsonc    (Meta app > Settings > Basic)
 //                      npx wrangler secret put WA_VERIFY_TOKEN -c wrangler.admin.jsonc  (any long random string, also typed into Meta)
+//                      npx wrangler secret put GOOGLE_CLIENT_SECRET -c wrangler.admin.jsonc (the OAuth client's secret)
 {
   "name": "heirestates-admin",
   "compatibility_date": "2026-10-01",
@@ -35,6 +36,9 @@
     "CF_ACCOUNT_ID": "3c6f10a996d25fa8c2e7d4408d26439c",
     // Meta app > WhatsApp > API Setup: the business number's "Phone number ID" (not the number itself)
     "WA_PHONE_NUMBER_ID": "",
-    "WA_GRAPH_VERSION": "v23.0"
+    "WA_GRAPH_VERSION": "v23.0",
+    // Google Cloud console > APIs & Services > Credentials: the OAuth "Web application" client's ID.
+    // Its authorised redirect URI is https://admin.heirestates.com/api/google/callback
+    "GOOGLE_CLIENT_ID": "562480073402-6d77hgjot1r7r2ofh8ernmuqb65c0n3f.apps.googleusercontent.com"
   }
 }

@@ -5,15 +5,17 @@
 //   /api/visits?days=7|30|90           site visits from Cloudflare Web Analytics
 //   /api/whatsapp/webhook              Meta's WhatsApp messages and statuses (signed, no sign-in)
 //   /api/whatsapp/send, /media/:id     a reply from the admin, a photo or file they sent
+//   /api/google/*                      Google Calendar bookings on the connected account (google.js)
 //   scheduled (every 15 minutes)       emails reminders that have come due
 //   PublicApi.inquiry()                saves an inquiry from the public sites and alerts its agent
-// Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN (wrangler secret put). The rest is in
+// Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN, GOOGLE_CLIENT_SECRET (wrangler secret put). The rest is in
 // wrangler.admin.jsonc's vars.
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { db, whoIs } from "./supabase.js";
 import { mail } from "./mail.js";
 import { newCode, hash, check, canSend, TTL, TRIES } from "./code.js";
 import * as whatsapp from "./whatsapp.js";
+import * as google from "./google.js";
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 const fail = (error, status = 400) => json({ error }, status);
@@ -169,6 +171,15 @@ export default {
         return new Response("error", { status: 500 }); // Meta tries again later
       }
     }
+    // Google sending the admin back after consent: checked by its signed state instead
+    if (url.pathname === "/api/google/callback" && req.method === "GET") {
+      try {
+        return await google.callback(req, env);
+      } catch (e) {
+        console.error("google callback", e);
+        return Response.redirect(`${env.ADMIN_URL}/calendar?google=failed`, 302);
+      }
+    }
     // changes only from the admin's own pages
     if (req.method !== "GET" && req.headers.get("Origin") !== url.origin) return fail("Not allowed", 403);
     try {
@@ -184,6 +195,22 @@ export default {
       if (path.startsWith("whatsapp/") && !env.WA_TOKEN) return fail("WhatsApp isn't connected yet (WA_TOKEN)", 501);
       if (path === "whatsapp/send" && req.method === "POST") return await whatsapp.send(req, env, me);
       if (path.startsWith("whatsapp/media/") && req.method === "GET") return await whatsapp.media(env, path.slice(15));
+      if (path.startsWith("google/")) {
+        if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) return fail("Google isn't set up yet (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)", 501);
+        const route = `${req.method} ${path.slice(7)}`;
+        try {
+          if (route === "POST connect") return await google.connect(env, me);
+          if (route === "GET status") return await google.status(env);
+          if (route === "POST disconnect") return await google.disconnect(env);
+          if (route === "GET events") return await google.events(env);
+          if (route === "POST book") return await google.book(req, env, me);
+          if (route === "POST cancel") return await google.cancel(req, env);
+        } catch (e) {
+          if (!e.status) throw e;
+          console.error("google", e);
+          return fail(e.message, e.status); // "not connected" and Google's own refusals, worded for the admin
+        }
+      }
       if (path === "visits" && req.method === "GET") {
         const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
         if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return fail("Site visits aren't set up yet (CF_API_TOKEN, CF_ACCOUNT_ID)", 501);

@@ -2,3 +2,6 @@
 SUPABASE_SECRET_KEY=sb_secret_...
 RESEND_API_KEY=re_...
 CF_API_TOKEN=
+GOOGLE_CLIENT_SECRET=
+# Google sends you back here after consent; locally, point it at the dev admin (and add that redirect URI in Google too)
+# ADMIN_URL=http://localhost:5190
