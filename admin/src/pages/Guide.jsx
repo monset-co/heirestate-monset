@@ -21,6 +21,8 @@ const SECTIONS = [
       "The buttons along the top are quick lists: Open deals, Mine, Not yet called, Gone quiet, Papers due, Hot, and Everyone. The number beside each is how many leads are in it. Search and the stage and site filters narrow any list further.",
       `Last contact is the latest note, WhatsApp message (either way) or stage change. It turns red once an open lead has been quiet for over ${QUIET_DAYS} days.`,
       "Next step is the lead's earliest open reminder. \"None set\" means an open lead with nothing planned: set a reminder so it isn't forgotten.",
+      "Adding a lead by hand, start with Looking to. Kind (which tab the lead sits in) follows it: Rent puts it in Rentals, Buy pre-selling in Pre-selling, the rest in Brokerage. You can still change Kind yourself.",
+      "Mobile and email are optional. A lead missing either shows an Add mobile or Add email button on its page, so whoever gets them can fill them in.",
     ],
   },
   {
@@ -52,6 +54,23 @@ const SECTIONS = [
       "To give someone a task, drag a note off the pad onto their column, or drag an existing note across. On a phone, use Move to… at the bottom of the note. Moving a private note asks first, because the whole team will see it.",
       "Add a due date (it turns red once overdue), flag it urgent, or tie it to a client so it links to their page. Tick it when it's done, and drag it to the bin when it's no longer needed.",
       "Turn on notifications in Settings, on each phone and computer you use, to get an alert when a task is given to you, a new inquiry comes in, a client messages on WhatsApp, or a reminder comes due. On iPhone, install the app to the home screen first.",
+    ],
+  },
+  {
+    id: "bell",
+    title: "The notification bell",
+    body: [
+      "The bell at the top shows your alerts: tasks given to you, new inquiries, WhatsApp messages and reminders that have come due. A gold dot marks the ones you haven't opened; tap one to go straight to it.",
+      "It works on every device you sign in on, even without notifications turned on. Alerts are kept for two months.",
+    ],
+  },
+  {
+    id: "library",
+    title: "Documents and Presentations",
+    body: [
+      "Documents holds the team's own files, the ones that belong to no single client: forms, price lists, spreadsheets, CSV exports. Presentations holds decks to show a client.",
+      "Drag files from your computer anywhere onto the page to add them, or press Upload. Documents takes PDF, Excel, CSV, Word, PowerPoint and photos; Presentations takes PDF and PowerPoint.",
+      "Tap a file to read it. PDFs open in the reader, CSVs as a table, and Excel, Word and PowerPoint in Microsoft's viewer. On a PDF deck, Present plays it full screen: arrow keys or swipe to move, Esc to stop.",
     ],
   },
   {

@@ -7,6 +7,7 @@ import { supabase, run } from "../supabase";
 import { Live, LiveLi, SkeletonRows, toast } from "../motion";
 import { Empty, ErrorNote, btnGhost, card, input, Select, ask } from "../ui";
 import { CHECKLIST, FOLDERS, ON_THE_CLOCK, PAPERS_DAYS, ago, papersDue } from "../crm";
+import { parseCsv } from "../csv";
 
 const PdfDeck = lazy(() => import("../PdfDeck"));
 export const FILES = "client-files";
@@ -27,15 +28,16 @@ const TYPES = {
 const MAX_MB = 25;
 const ext = (name) => name.split(".").pop().toLowerCase();
 // how a file opens; HEIC isn't shown by most browsers, so it downloads
-function kindOf(name) {
+export function kindOf(name) {
   const e = ext(name);
   if (e === "pdf") return "pdf";
   if (["jpg", "jpeg", "png", "webp"].includes(e)) return "image";
-  if (["docx", "xlsx", "pptx"].includes(e)) return "office";
+  if (["docx", "xlsx", "xls", "pptx"].includes(e)) return "office";
+  if (e === "csv") return "csv";
   return null;
 }
-const ICON = { pdf: FileText, image: FileImage, office: FileSpreadsheet };
-const size = (b) => (b == null ? "" : b < 1048576 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1048576).toFixed(1)} MB`);
+export const ICON = { pdf: FileText, image: FileImage, office: FileSpreadsheet, csv: FileSpreadsheet };
+export const size =(b) => (b == null ? "" : b < 1048576 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1048576).toFixed(1)} MB`);
 
 /** Stores one file in a lead's folder; the row comes back. Used here and by the WhatsApp inbox. */
 export async function saveFile(leadId, folder, file, name = file.name) {
@@ -351,8 +353,38 @@ function CheckBar({ item, status, row, onCheck }) {
   );
 }
 
+/** A CSV read here, as a table (first row as the headings), so it never leaves for another site. */
+function CsvTable({ url }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    fetch(url).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`Couldn't open it (${r.status})`)))).then((t) => setRows(parseCsv(t)), (e) => setError(e.message));
+  }, [url]);
+  if (error) return <p className="p-6 text-sm text-white/70">{error}</p>;
+  if (!rows) return <p className="p-6 text-sm text-white/60">Opening…</p>;
+  const [head = [], ...body] = rows;
+  // ponytail: every row drawn at once; page or virtualise it if someone opens a 50,000-row export
+  return (
+    <div className="min-h-0 flex-1 overflow-auto bg-white text-sm text-fg">
+      <table className="min-w-full border-collapse tabular-nums">
+        <thead className="sticky top-0 bg-sunken">
+          <tr>{head.map((h, i) => <th key={i} className="border border-line px-3 py-2 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {body.map((r, i) => (
+            <tr key={i} className="even:bg-sunken/40">
+              {head.map((_, j) => <td key={j} className="border border-line px-3 py-1.5 align-top whitespace-pre-wrap">{r[j]}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="p-3 text-xs text-muted">{body.length} rows</p>
+    </div>
+  );
+}
+
 /** Full-screen native dialog: top layer, Esc closes it. PDFs read or present; photos; Office through Microsoft. */
-function Viewer({ file, url, present, onClose }) {
+export function Viewer({ file, url, present, onClose }) {
   const ref = useRef(null);
   useEffect(() => {
     if (ref.current && !ref.current.open) ref.current.showModal();
@@ -383,6 +415,8 @@ function Viewer({ file, url, present, onClose }) {
             <div className="grid min-h-0 flex-1 place-items-center overflow-auto p-4">
               <img src={url} alt={file.file_name} className="max-h-full max-w-full object-contain" />
             </div>
+          ) : kind === "csv" ? (
+            <CsvTable url={url} />
           ) : (
             // PowerPoint plays as a slideshow here; Word and Excel read
             <iframe

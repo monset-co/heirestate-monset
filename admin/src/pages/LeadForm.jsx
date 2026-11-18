@@ -10,6 +10,13 @@ import { CATEGORIES, SOURCES } from "../crm";
 import { AREAS, FURNISHING, KINDS, LANDMARKS, LOOKING_TO, RADII, SIZES, pesos, tidyMobile } from "../match";
 
 const START = { "pre-selling": ["Buy pre-selling"], rentals: ["Rent"], brokerage: ["Buy resale"] };
+// Looking to leads, Kind follows: the kind (Leads sub-tab) each wish belongs to
+const KIND_OF = { Rent: "rentals", "Buy resale": "brokerage", "Buy pre-selling": "pre-selling", "Assume balance": "brokerage", "Sell or lease out": "brokerage" };
+// keep the kind while it still fits one of the wishes; otherwise the first wish's
+export const kindFor = (lookingTo, kind) => {
+  const kinds = lookingTo.map((w) => KIND_OF[w]).filter(Boolean);
+  return !kinds.length || kinds.includes(kind) ? kind : kinds[0];
+};
 const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
 
 export default function LeadForm({ lead, onSaved }) {
@@ -51,7 +58,6 @@ export default function LeadForm({ lead, onSaved }) {
     e.preventDefault();
     setError("");
     if (mobile === null) return setError("That mobile number doesn't look right. Use 0917 123 4567, or + and the country code for numbers abroad.");
-    if (!mobile && !f.email.trim()) return setError("Add a mobile number or an email, so the team can reach them.");
     if (f.budget.trim() && budget === null) return setError("Write the budget as an amount: 45000, 45k or 1.5M.");
     const out = {
       name: f.name.trim(),
@@ -86,8 +92,13 @@ export default function LeadForm({ lead, onSaved }) {
     <form onSubmit={save} className="grid gap-4">
       <ErrorNote error={error} />
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Kind">
-          <Select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value, looking_to: isNew ? START[e.target.value] : f.looking_to })} className={input}>
+        <Field label="Looking to">
+          <Select multiple value={f.looking_to} onChange={(e) => setF({ ...f, looking_to: e.target.value, category: kindFor(e.target.value, f.category) })} placeholder="Choose…" className={input}>
+            {Object.keys(LOOKING_TO).map((k) => <option key={k} value={k}>{k}</option>)}
+          </Select>
+        </Field>
+        <Field label="Kind" hint="Follows Looking to. Change it if this lead belongs in another tab.">
+          <Select value={f.category} onChange={set("category")} className={input}>
             {Object.entries(CATEGORIES).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
           </Select>
         </Field>
@@ -101,10 +112,10 @@ export default function LeadForm({ lead, onSaved }) {
         <Field label="Name">
           <input value={f.name} onChange={set("name")} required minLength={2} maxLength={100} autoComplete="off" className={input} />
         </Field>
-        <Field label="Mobile" hint={mobile ? `Saved as ${mobile}` : mobile === null ? "Not a mobile number yet" : "0917 123 4567, or + and the country code"}>
+        <Field label="Mobile (optional)" hint={mobile ? `Saved as ${mobile}` : mobile === null ? "Not a mobile number yet" : "0917 123 4567, or + and the country code. Can be added later."}>
           <input type="tel" inputMode="tel" value={f.mobile} onChange={set("mobile")} onBlur={() => mobile && setF({ ...f, mobile })} maxLength={40} className={`${input} tabular-nums`} />
         </Field>
-        <Field label="Email">
+        <Field label="Email (optional)" hint="Can be added later.">
           <input type="email" value={f.email} onChange={set("email")} maxLength={254} className={input} />
         </Field>
       </div>
@@ -112,11 +123,6 @@ export default function LeadForm({ lead, onSaved }) {
       <h3 className="mt-2 font-display text-lg text-ink">What they want</h3>
       <p className="-mt-2 text-xs text-muted">Pick as many as fit. The lead's Overview lists the inventory that matches.</p>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Looking to">
-          <Select multiple value={f.looking_to} onChange={set("looking_to")} placeholder="Choose…" className={input}>
-            {Object.keys(LOOKING_TO).map((k) => <option key={k} value={k}>{k}</option>)}
-          </Select>
-        </Field>
         <Field label="Property type">
           <Select multiple value={f.property_types} onChange={set("property_types")} placeholder="Any" className={input}>
             <optgroup label="Kind">{Object.keys(KINDS).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>

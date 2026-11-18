@@ -2,7 +2,8 @@
 // a navy rail whose active pill springs between items on desktop; on phones, a tab bar whose active
 // tab grows into a labelled pill, with everything else under More, a bottom sheet the page eases
 // back behind. Each page rises in on navigation.
-import { BookOpen, Boxes, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
+import Bell from "./Bell";
+import { BookOpen, Boxes, FolderOpen, Presentation, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
@@ -18,6 +19,8 @@ export const nav = [
   { to: "/leads", label: "Leads", icon: Inbox, tab: true },
   { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, tab: true },
   { to: "/notes", label: "Notes", icon: StickyNote },
+  { to: "/documents", label: "Documents", icon: FolderOpen },
+  { to: "/presentations", label: "Presentations", icon: Presentation },
   { to: "/email", label: "Email", icon: Mail },
   { to: "/inventory", label: "Inventory", icon: Boxes },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
@@ -68,8 +71,9 @@ export default function Shell() {
     <div data-sheet={more ? "open" : undefined} className="min-h-dvh transition-colors duration-300 [--tabbar-h:4rem] data-[sheet=open]:bg-navy-deep md:grid md:grid-cols-[15rem_1fr] md:[--tabbar-h:0px] print:block">
       <div className="app-page bg-bg md:contents">
         <aside className="sticky top-0 z-20 flex flex-col print:hidden bg-side pt-[env(safe-area-inset-top)] text-cream md:h-dvh md:pt-0">
-          <div className="flex h-16 items-center px-4 md:h-20 md:px-5">
+          <div className="flex h-16 items-center justify-between gap-2 px-4 md:h-20 md:px-5">
             <Mark />
+            <Bell />
           </div>
 
           {/* Desktop rail: the active pill springs between items */}

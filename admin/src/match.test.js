@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fit, km, matches, tidyMobile, pesos } from "./match.js";
+import { fit, inArea, km, matches, tidyMobile, pesos } from "./match.js";
 
 const p = (o) => ({ status: ["For Rent"], type: "", location: "", furnishing: null, price: null, available: true, available_from: null, ...o });
 
@@ -76,4 +76,11 @@ test("pesos", () => {
   assert.equal(pesos("120k"), 120000);
   assert.equal(pesos("1.5M"), 1500000);
   assert.equal(pesos("about 5"), null);
+});
+
+test("anywhere in Cebu City takes in its districts; an area knows its buildings' names", () => {
+  assert.equal(inArea("Anywhere in Cebu City", p({ location: "IT Park, Lahug" })), true);
+  assert.equal(inArea("Anywhere in Cebu City", p({ location: "Mandaue" })), false);
+  assert.equal(inArea("IT Park", p({ location: "", building: "Avida Riala, IT Park" })), true);
+  assert.equal(fit({ areas: ["Anywhere in Cebu City"] }, p({ location: "Banilad" })).area, true);
 });

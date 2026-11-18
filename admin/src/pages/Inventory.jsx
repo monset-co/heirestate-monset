@@ -3,7 +3,7 @@
 // shows on a site. A row opens its full record to read, copy the post summary from, or edit.
 import { Copy, ExternalLink, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Chip } from "./Matches";
-import { AREA, AREAS, LANDMARK, LANDMARKS, RADII, distance } from "../match";
+import { AREAS, inArea, LANDMARK, LANDMARKS, RADII, distance } from "../match";
 import MapView, { PIN } from "../MapView";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
@@ -57,6 +57,8 @@ export default function Inventory() {
 
   // every building in the inventory, A to Z: the filter's choices and the form's suggestions
   const buildings = useMemo(() => [...new Set((list ?? []).map((r) => r.building).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [list]);
+  // the building filter offers only the buildings in the area picked
+  const buildingsHere = useMemo(() => (q.where ? buildings.filter((b) => list.some((r) => r.building === b && inArea(q.where, r))) : buildings), [buildings, list, q.where]);
   const inTab = (t, r) => !t.has || r.status.some((s) => t.has.includes(s));
   // ponytail: the whole inventory filtered in the browser; move to SQL past a few thousand rows
   const shown = useMemo(() => {
@@ -69,7 +71,7 @@ export default function Inventory() {
         (q.status === "" ||
           (q.status === "open" ? (r.status.some((s) => OPEN.includes(s)) && r.available !== false) || r.available_from > today : q.status === "both" ? r.status.includes("For Rent") && (r.status.includes("For Sale") || r.status.includes("For Assume")) : r.status.includes(q.status))) &&
         (!q.furnishing || r.furnishing === q.furnishing) &&
-        (!q.where || AREA[q.where]?.test(r.location ?? "")) &&
+        (!q.where || inArea(q.where, r)) &&
         (!q.building || r.building === q.building) &&
         (!q.near || (distance(r, q.near) ?? Infinity) <= Number(q.km)) &&
         (!q.pets || r.pet_friendly === "yes") &&
@@ -121,7 +123,13 @@ export default function Inventory() {
         <input aria-label="Highest price" inputMode="numeric" placeholder="Up to ₱ (their budget)" value={q.max} onChange={set("max")} className={`${input} sm:w-48`} />
       </div>
       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <Select aria-label="Filter by area" value={q.where} onChange={set("where")} className={`${input} sm:w-60`}>
+        <Select
+          aria-label="Filter by area"
+          value={q.where}
+          // a building outside the new area would hide everything: let it go
+          onChange={(e) => setQ({ ...q, where: e.target.value, building: !q.building || !e.target.value || list?.some((r) => r.building === q.building && inArea(e.target.value, r)) ? q.building : "" })}
+          className={`${input} sm:w-60`}
+        >
           <option value="">Anywhere</option>
           {Object.entries(AREAS).map(([g, list]) => (
             <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
@@ -129,7 +137,7 @@ export default function Inventory() {
         </Select>
         <Select aria-label="Filter by building" value={q.building} onChange={set("building")} className={`${input} sm:w-60`}>
           <option value="">Any building</option>
-          {buildings.map((b) => <option key={b} value={b}>{b}</option>)}
+          {buildingsHere.map((b) => <option key={b} value={b}>{b}</option>)}
         </Select>
         <Select aria-label="Filter by furnishing" value={q.furnishing} onChange={set("furnishing")} className={`${input} sm:w-48`}>
           <option value="">Any furnishing</option>

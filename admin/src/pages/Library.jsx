@@ -1,0 +1,201 @@
+// The team's own files, after dashboard-monset's Documents and Presentations: one page for each
+// shelf. Drop files anywhere on the page (or Upload) and open them here: PDFs in the reader, or
+// presented full screen; CSVs as a table; Excel, Word and PowerPoint in Microsoft's viewer.
+import { Download, Play, Search, Trash2, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { supabase, run } from "../supabase";
+import { Live, LiveLi, SkeletonRows, toast } from "../motion";
+import { Empty, ErrorNote, PageHeader, ask, btn, btnGhost, card, input } from "../ui";
+import { ago } from "../crm";
+import { ICON, Viewer, kindOf, size } from "./FilesTab";
+
+const BUCKET = "library";
+const MAX_MB = 50;
+const SHELVES = {
+  documents: {
+    title: "Documents",
+    sub: "The team's own files: forms, price lists, spreadsheets, CSV exports. Drop files anywhere on this page to add them.",
+    types: ["pdf", "xlsx", "xls", "csv", "docx", "pptx", "jpg", "jpeg", "png", "webp"],
+    say: "PDF, Excel, CSV, Word, PowerPoint and photos",
+  },
+  presentations: {
+    title: "Presentations",
+    sub: "Decks to show a client. Present plays one full screen: arrow keys or swipe to move, F for full screen, Esc to stop.",
+    types: ["pdf", "pptx"],
+    say: "PDF and PowerPoint",
+  },
+};
+// the bucket's types (supabase/migrations), by extension: Windows sends a CSV as an Excel file
+const MIME = {
+  pdf: "application/pdf",
+  csv: "text/csv",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  xls: "application/vnd.ms-excel",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+const ext = (name) => name.split(".").pop().toLowerCase();
+const signed = async (f, secs = 300) => (await run(supabase.storage.from(BUCKET).createSignedUrl(f.file_path, secs))).signedUrl;
+
+export default function Library({ shelf }) {
+  const s = SHELVES[shelf];
+  const [files, setFiles] = useState(null);
+  const [q, setQ] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [over, setOver] = useState(false);
+  const [open, setOpen] = useState(null); // { file, url, present }
+  const picker = useRef(null);
+
+  useEffect(() => {
+    setFiles(null);
+    run(supabase.from("library_files").select("*").eq("shelf", shelf).order("created_at", { ascending: false })).then(setFiles, (e) => setError(e.message));
+  }, [shelf]);
+
+  async function upload(list) {
+    setError("");
+    let done = 0;
+    for (const [i, file] of [...list].entries()) {
+      setBusy(`Uploading ${i + 1} of ${list.length}…`);
+      try {
+        const e = ext(file.name);
+        if (!s.types.includes(e)) throw new Error(`${file.name}: ${s.title} takes ${s.say} files`);
+        if (file.size > MAX_MB * 1048576) throw new Error(`${file.name}: files must be ${MAX_MB} MB or smaller`);
+        const path = `${shelf}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_").slice(-120)}`;
+        await run(supabase.storage.from(BUCKET).upload(path, file, { contentType: MIME[e] }));
+        try {
+          const row = await run(supabase.from("library_files").insert({ shelf, file_path: path, file_name: file.name.slice(0, 200), size: file.size }).select().single());
+          setFiles((fs) => [row, ...fs]);
+          done++;
+        } catch (err) {
+          await supabase.storage.from(BUCKET).remove([path]); // no file without its row
+          throw err;
+        }
+      } catch (err) {
+        setError(err.message);
+      }
+    }
+    setBusy("");
+    if (done) toast(`${done === 1 ? "File" : `${done} files`} added`);
+  }
+
+  async function view(f, present = false) {
+    const kind = kindOf(f.file_name);
+    if (kind === "office" && !(await ask({ title: "Open in Microsoft's viewer?", body: "Word, Excel and PowerPoint files open in Microsoft's Office viewer, which fetches the file through a link that lasts 10 minutes.", yes: "Open it" }))) return;
+    try {
+      const url = await signed(f, kind === "office" ? 600 : 300);
+      if (kind) setOpen({ file: f, url, present });
+      else location.href = `${url}&download=${encodeURIComponent(f.file_name)}`;
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function download(f) {
+    try {
+      // cross-origin, so the download attribute is ignored; Supabase's ?download= sets the header
+      location.href = `${await signed(f)}&download=${encodeURIComponent(f.file_name)}`;
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function remove(f) {
+    if (!(await ask({ title: `Delete “${f.file_name}”?`, body: "It's gone for the whole team. It can't be undone.", yes: "Delete", danger: true }))) return;
+    try {
+      await run(supabase.storage.from(BUCKET).remove([f.file_path]));
+      await run(supabase.from("library_files").delete().eq("id", f.id));
+      setFiles((fs) => fs.filter((x) => x.id !== f.id));
+      toast("File deleted");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = files?.filter((f) => words.every((w) => f.file_name.toLowerCase().includes(w)));
+  const small = "press grid size-9 place-items-center rounded-md text-muted hover:bg-sunken hover:text-fg";
+
+  return (
+    <div
+      className="relative min-h-[60vh]"
+      onDragOver={(e) => {
+        if (![...e.dataTransfer.types].includes("Files")) return;
+        e.preventDefault();
+        setOver(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget) && setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        if (e.dataTransfer.files.length) upload(e.dataTransfer.files);
+      }}
+    >
+      <PageHeader title={s.title} sub={s.sub}>
+        <button type="button" className={btn} onClick={() => picker.current.click()} disabled={!!busy}>
+          <Upload className="size-4" aria-hidden /> {busy || "Upload"}
+        </button>
+        <input ref={picker} type="file" multiple hidden accept={s.types.map((t) => `.${t}`).join(",")} onChange={(e) => (upload(e.target.files), (e.target.value = ""))} />
+      </PageHeader>
+
+      <div className="mt-6 grid max-w-5xl gap-4">
+        <ErrorNote error={error} />
+        <label className="relative sm:max-w-xs">
+          <span className="sr-only">Search {s.title.toLowerCase()}</span>
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" aria-hidden />
+          <input type="search" placeholder="Search by name…" value={q} onChange={(e) => setQ(e.target.value)} className={`${input} pl-9`} />
+        </label>
+
+        <div className={card}>
+          {!shown ? (
+            <div className="p-4"><SkeletonRows n={4} /></div>
+          ) : !shown.length ? (
+            <Empty>{files.length ? "Nothing by that name." : `No ${s.title.toLowerCase()} yet. Drop ${s.say} files here, or press Upload.`}</Empty>
+          ) : (
+            <ul className="divide-y divide-line">
+              <Live>
+                {shown.map((f, i) => {
+                  const kind = kindOf(f.file_name);
+                  const Icon = ICON[kind] ?? ICON.pdf;
+                  return (
+                    <LiveLi key={f.id} i={i} className="flex items-center gap-3 px-4 py-3">
+                      <Icon className="size-5 shrink-0 text-muted" aria-hidden />
+                      <button type="button" onClick={() => view(f)} className="min-w-0 flex-1 text-left">
+                        <span className="block truncate font-medium text-fg hover:underline">{f.file_name}</span>
+                        <span className="block text-xs text-muted">
+                          {size(f.size)} · {f.uploaded_by?.split("@")[0]} · {ago(f.created_at)}
+                        </span>
+                      </button>
+                      {shelf === "presentations" && kind === "pdf" && (
+                        <button type="button" onClick={() => view(f, true)} className={`${btnGhost} px-3 py-1.5 text-xs`}>
+                          <Play className="size-3.5" aria-hidden /> Present
+                        </button>
+                      )}
+                      <button type="button" onClick={() => download(f)} className={small} aria-label={`Download ${f.file_name}`}>
+                        <Download className="size-4" />
+                      </button>
+                      <button type="button" onClick={() => remove(f)} className={`${small} hover:text-danger`} aria-label={`Delete ${f.file_name}`}>
+                        <Trash2 className="size-4" />
+                      </button>
+                    </LiveLi>
+                  );
+                })}
+              </Live>
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {over && (
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl border-2 border-dashed border-gold bg-gold/10 text-sm font-semibold text-gold-ink backdrop-blur-[1px]">
+          Drop to add to {s.title}
+        </div>
+      )}
+      {open && <Viewer {...open} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}

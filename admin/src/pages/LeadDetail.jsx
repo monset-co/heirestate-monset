@@ -1,4 +1,4 @@
-import { BellRing, CalendarPlus, ChevronLeft, Mail, MessageCircle, Pencil, Phone, Trash2 } from "lucide-react";
+import { BellRing, CalendarPlus, ChevronLeft, Mail, MessageCircle, Pencil, Phone, Plus, Trash2 } from "lucide-react";
 import Matches, { Chip } from "./Matches";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -95,7 +95,7 @@ export default function LeadDetail() {
         <Tabs label="Lead sections" items={TABS.map((t) => ({ id: t, title: t }))} value={tab} onChange={(t) => setParams({ tab: t }, { replace: true })} />
       </div>
       <TabPanel key={tab} className="mt-6">
-        {tab === "Overview" && <Overview lead={lead} onSaved={(l) => setLead({ ...lead, ...l })} />}
+        {tab === "Overview" && <Overview lead={lead} onSaved={(l) => setLead({ ...lead, ...l })} onEdit={() => setEditing(true)} />}
         {tab === "Notes" && <Notes leadId={lead.id} notes={notes} setNotes={setNotes} />}
         {tab === "Files" && <FilesTab leadId={lead.id} lead={lead} onChecked={(papers_verified) => setOverview((o) => o && { ...o, papers_verified })} />}
         {tab === "WhatsApp" && <LeadChat lead={lead} chat={chat} setChat={setChat} />}
@@ -192,7 +192,7 @@ function LeadChat({ lead, chat, setChat }) {
   );
 }
 
-function Overview({ lead, onSaved }) {
+function Overview({ lead, onSaved, onEdit }) {
   const [deal, setDeal] = useState({ stage: lead.stage, lost_reason: lead.lost_reason ?? "", agent_id: lead.agent_id == null ? "" : String(lead.agent_id) });
   const [users, setUsers] = useState([]);
   const [error, setError] = useState("");
@@ -256,6 +256,12 @@ function Overview({ lead, onSaved }) {
               <a href={`mailto:${lead.email}`} className={`${btnGhost} min-w-0`}>
                 <Mail className="size-4 shrink-0" aria-hidden /> <span className="truncate">{lead.email}</span>
               </a>
+            )}
+            {/* both are optional: whoever gets them adds them later */}
+            {(!lead.mobile || !lead.email) && (
+              <button type="button" onClick={onEdit} className={`${btnGhost} border-dashed`}>
+                <Plus className="size-4" aria-hidden /> Add {!lead.mobile && !lead.email ? "mobile or email" : !lead.mobile ? "mobile" : "email"}
+              </button>
             )}
             <Link to={`/calendar?lead=${lead.id}`} className={btnGhost}>
               <CalendarPlus className="size-4" aria-hidden /> Book a viewing

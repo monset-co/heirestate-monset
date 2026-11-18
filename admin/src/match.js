@@ -58,7 +58,11 @@ export const AREAS = {
     Naga: /naga/i,
   },
 };
+// "Anywhere in Cebu City" is any of its districts too: "IT Park, Lahug" never says "Cebu City"
+AREAS["Cebu City"]["Anywhere in Cebu City"] = new RegExp(Object.values(AREAS["Cebu City"]).map((r) => r.source).join("|"), "i");
 export const AREA = Object.assign({}, ...Object.values(AREAS));
+// is a property in this area: by its location, or its building's name ("Avida Riala, IT Park")
+export const inArea = (name, p) => !!AREA[name]?.test(`${p.location ?? ""} ${p.building ?? ""}`);
 
 export const WISHES = ["kind", "size", "area", "building", "near", "furnishing", "budget", "when"];
 
@@ -117,7 +121,7 @@ export function fit(lead, p, today = new Date().toISOString().slice(0, 10)) {
     status: statuses.length ? p.status.some((s) => statuses.includes(s)) : null,
     kind: kinds.length ? kinds.some((k) => KINDS[k].test(type)) : null,
     size: sizes.length ? sizes.some((k) => SIZES[k].test(type)) : null,
-    area: lead.areas?.length ? lead.areas.some((a) => AREA[a]?.test(p.location ?? "")) : null,
+    area: lead.areas?.length ? lead.areas.some((a) => inArea(a, p)) : null,
     // a building they prefer, by the property's Building
     building: lead.buildings?.length ? lead.buildings.includes(p.building) : null,
     // a property with no position yet can't be shown near; it doesn't count against, it just doesn't count

@@ -231,4 +231,14 @@ await agent("insert into push_subscriptions (endpoint, p256dh, auth) values ('ht
 assert.equal((await admin("select count(*)::int n from push_subscriptions"))[0].n, 0, "nobody sees another's devices");
 await fails(() => admin("insert into push_subscriptions (endpoint, email, p256dh, auth) values ('https://push.example/x', 'agent@example.com', 'k', 'a')"), /row-level security/);
 
+// documents and presentations: the team's, on one of the two shelves
+await admin("insert into library_files (shelf, file_path, file_name) values ('presentations', 'presentations/x-deck.pdf', 'deck.pdf')");
+await fails(() => admin("insert into library_files (shelf, file_path, file_name) values ('photos', 'photos/x.jpg', 'x.jpg')"), /check constraint/);
+assert.equal((await stranger("select count(*)::int n from library_files"))[0].n, 0);
+
+// the bell: each admin's own alerts only
+await db.exec("insert into notifications (email, title, url) values ('agent@example.com', 'A task for you', '/notes'), ('heirestates.fh@gmail.com', 'New inquiry', '/leads/1')");
+assert.deepEqual((await agent("select title from notifications")).map((r) => r.title), ["A task for you"]);
+assert.equal((await agent("update notifications set read_at = now() where email = 'heirestates.fh@gmail.com' returning id")).length, 0);
+
 });

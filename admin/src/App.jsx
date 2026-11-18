@@ -21,6 +21,7 @@ import Calendar from "./pages/Calendar";
 import Inventory from "./pages/Inventory";
 import Email from "./pages/Email";
 import Notes from "./pages/Notes";
+import Library from "./pages/Library";
 
 const router = createBrowserRouter([
   {
@@ -33,6 +34,8 @@ const router = createBrowserRouter([
       { path: "whatsapp/:id", element: <WhatsApp /> },
       { path: "calendar", element: <Calendar /> },
       { path: "notes", element: <Notes /> },
+      { path: "documents", element: <Library shelf="documents" key="documents" /> },
+      { path: "presentations", element: <Library shelf="presentations" key="presentations" /> },
       { path: "inventory", element: <Inventory /> },
       { path: "email", element: <Email /> },
       { path: "listings", element: <Listings /> },

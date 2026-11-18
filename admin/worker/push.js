@@ -49,13 +49,18 @@ async function vapid(env, endpoint) {
   return `vapid t=${body}.${b64u(sig)}, k=${env.VAPID_PUBLIC_KEY}`;
 }
 
-// Sends { title, body, url } to every device of these people (an email or a list; none: everyone),
-// leaving out `except` (whoever caused it). Never throws: a failed alert must not fail the work.
+// Tells these people (an email or a list; none: everyone) { title, body, url }, leaving out `except`
+// (whoever caused it): kept for the bell in the app (notifications), and pushed to every device
+// they've turned it on for. Never throws: a failed alert must not fail the work.
 export async function notify(env, to, message, except) {
-  if (!env.VAPID_PRIVATE_KEY || !env.VAPID_PUBLIC_KEY) return;
   try {
-    const who = to == null ? "" : `&email=in.(${[to].flat().map((e) => `"${e}"`).join(",")})`;
-    const subs = (await db(env).get(`push_subscriptions?select=endpoint,p256dh,auth,email${who}`)).filter((s) => s.email !== except);
+    const d = db(env);
+    const emails = (to == null ? (await d.get("admin_users?select=email&active=eq.true")).map((a) => a.email) : [to].flat()).filter((e) => e && e !== except);
+    if (!emails.length) return;
+    message = { title: message.title.slice(0, 200), body: message.body?.slice(0, 500) ?? null, url: message.url };
+    await d.insert("notifications", emails.map((email) => ({ email, ...message })));
+    if (!env.VAPID_PRIVATE_KEY || !env.VAPID_PUBLIC_KEY) return;
+    const subs = await d.get(`push_subscriptions?select=endpoint,p256dh,auth&email=in.(${emails.map((e) => `"${e}"`).join(",")})`);
     await Promise.all(
       subs.map(async (s) => {
         const r = await fetch(s.endpoint, {

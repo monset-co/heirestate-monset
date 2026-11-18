@@ -279,5 +279,7 @@ export default {
   },
   async scheduled(_, env, ctx) {
     ctx.waitUntil(remind(env));
+    // the bell keeps two months
+    ctx.waitUntil(db(env).remove(`notifications?created_at=lt.${new Date(Date.now() - 60 * 864e5).toISOString()}`).catch((e) => console.error("bell", e)));
   },
 };

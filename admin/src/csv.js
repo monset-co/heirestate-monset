@@ -21,3 +21,26 @@ export function download(name, text) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// A CSV file's rows, for reading one in the app: quoted cells may hold commas, "" and line breaks.
+export function parseCsv(text) {
+  text = text.replace(/^﻿/, ""); // Excel's byte-order mark
+  const rows = [[]];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') (cell += '"'), i++;
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ",") rows.at(-1).push(cell), (cell = "");
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      rows.at(-1).push(cell), (cell = ""), rows.push([]);
+    } else cell += c;
+  }
+  rows.at(-1).push(cell);
+  return rows.filter((r) => r.length > 1 || r[0] !== "");
+}
