@@ -20,6 +20,7 @@ import Guide from "./pages/Guide";
 import Calendar from "./pages/Calendar";
 import Inventory from "./pages/Inventory";
 import Email from "./pages/Email";
+import Notes from "./pages/Notes";
 
 const router = createBrowserRouter([
   {
@@ -31,6 +32,7 @@ const router = createBrowserRouter([
       { path: "whatsapp", element: <WhatsApp /> },
       { path: "whatsapp/:id", element: <WhatsApp /> },
       { path: "calendar", element: <Calendar /> },
+      { path: "notes", element: <Notes /> },
       { path: "inventory", element: <Inventory /> },
       { path: "email", element: <Email /> },
       { path: "listings", element: <Listings /> },

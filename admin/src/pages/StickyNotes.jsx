@@ -15,7 +15,7 @@ const TILT = [-1.2, 0.8, -0.4, 1.4];
 const tool = "press rounded p-1.5 opacity-60 hover:bg-black/5 hover:opacity-100";
 const next = (c) => COLORS[(COLORS.indexOf(c) + 1) % COLORS.length];
 // is a drag's page point over this element?
-const over = (el, { x, y }) => {
+export const over = (el, { x, y }) => {
   const r = el?.getBoundingClientRect();
   return !!r && x - scrollX >= r.left && x - scrollX <= r.right && y - scrollY >= r.top && y - scrollY <= r.bottom;
 };
@@ -146,7 +146,7 @@ export function Notes({ leadId, notes, setNotes }) {
 }
 
 /** The pad pinned to the corner: tear the top note off and drop it on the wall, or tap it. */
-function Pad({ onDrag, onDrop, onTap }) {
+export function Pad({ onDrag, onDrop, onTap, hint = "Drag onto the wall, or click to write a note" }) {
   const [sheet, setSheet] = useState(0); // a fresh top sheet after each one is torn off
   const dragged = useRef(false); // the pointer-up that ends a drag isn't a tap
   return (
@@ -168,7 +168,7 @@ function Pad({ onDrag, onDrop, onTap }) {
         onDrag={(_, i) => onDrag(i.point)}
         onDragEnd={(_, i) => onDrop(i.point) && setSheet((s) => s + 1)}
         onTap={() => !dragged.current && onTap()}
-        title="Drag onto the wall, or click to write a note"
+        title={hint}
         aria-label="New note"
         className="sticky-note sticky-yellow relative grid size-20 cursor-grab touch-none place-items-center rounded-sm text-center text-[0.6875rem] leading-tight font-semibold"
       >

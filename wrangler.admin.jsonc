@@ -39,6 +39,9 @@
     "WA_GRAPH_VERSION": "v23.0",
     // Google Cloud console > APIs & Services > Credentials: the OAuth "Web application" client's ID.
     // Its authorised redirect URI is https://admin.heirestates.com/api/google/callback
-    "GOOGLE_CLIENT_ID": "562480073402-6d77hgjot1r7r2ofh8ernmuqb65c0n3f.apps.googleusercontent.com"
+    "GOOGLE_CLIENT_ID": "562480073402-6d77hgjot1r7r2ofh8ernmuqb65c0n3f.apps.googleusercontent.com",
+    // push notifications (admin/worker/push.js): the public half of the VAPID key pair; the private
+    // half is the VAPID_PRIVATE_KEY secret. Change one, change both, and everyone turns alerts on again.
+    "VAPID_PUBLIC_KEY": "BNKa0-gNkBFRbZoj_QXkTO-FJRXGpWWvWy4twy735G5ZmRsH_28XVLe_5joWJmydVHKz2VBM2TIIUjaCpKKpctk"
   }
 }

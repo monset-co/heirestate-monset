@@ -4,6 +4,7 @@
 // Secrets: WA_TOKEN (a system user's permanent token), WA_APP_SECRET, WA_VERIFY_TOKEN.
 // Vars: WA_PHONE_NUMBER_ID, WA_GRAPH_VERSION.
 import { db } from "./supabase.js";
+import { notify } from "./push.js";
 
 const q = encodeURIComponent;
 const DAY = 864e5;
@@ -74,11 +75,13 @@ export async function webhook(req, env) {
       ? await d.update(`wa_threads?id=eq.${old.id}`, { ...(m.name && { name: m.name }), unread: old.unread + 1, last_message_at: m.at, last_inbound_at: m.at })
       : await d.insert("wa_threads", { wa_id: m.wa_id, name: m.name, unread: 1, last_message_at: m.at, last_inbound_at: m.at });
     // a retried webhook repeats wa_message_id: ignored
-    await d.call(`wa_messages?on_conflict=wa_message_id`, {
+    const [saved] = await d.call(`wa_messages?on_conflict=wa_message_id`, {
       method: "POST",
       headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
       body: JSON.stringify({ thread_id: thread.id, wa_message_id: m.wa_message_id, direction: "in", type: m.type, body: m.body, media_id: m.media_id, media_name: m.media_name, created_at: m.at }),
     });
+    // everyone, once per message (a retried webhook saves nothing, so says nothing)
+    if (saved) await notify(env, null, { title: `WhatsApp: ${thread.name ?? `+${m.wa_id}`}`, body: m.body?.slice(0, 200) || "Sent a photo or file", url: `/whatsapp/${thread.id}` });
   }
   for (const s of statuses) {
     if (!ORDER[s.status]) continue;

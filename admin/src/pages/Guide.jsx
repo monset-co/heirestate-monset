@@ -44,6 +44,17 @@ const SECTIONS = [
     ],
   },
   {
+    id: "board",
+    title: "The Notes board: tasks and your own notes",
+    body: [
+      "Notes in the menu is a board with a column for each person on the team. A note in someone's column is a task for them. Anyone holds what's up for grabs.",
+      "My notes is private: only you can see it, not even the rest of the team. Use it for what used to go in Messenger: reminders, a listing seen on Facebook (paste the link, it opens with a tap), a number to call back.",
+      "To give someone a task, drag a note off the pad onto their column, or drag an existing note across. On a phone, use Move to… at the bottom of the note. Moving a private note asks first, because the whole team will see it.",
+      "Add a due date (it turns red once overdue), flag it urgent, or tie it to a client so it links to their page. Tick it when it's done, and drag it to the bin when it's no longer needed.",
+      "Turn on notifications in Settings, on each phone and computer you use, to get an alert when a task is given to you, a new inquiry comes in, a client messages on WhatsApp, or a reminder comes due. On iPhone, install the app to the home screen first.",
+    ],
+  },
+  {
     id: "files",
     title: "Files and the papers checklist",
     body: [

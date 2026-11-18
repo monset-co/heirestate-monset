@@ -5,6 +5,7 @@ import { supabase, run } from "../supabase";
 import { Skeleton, toast } from "../motion";
 import { ErrorNote, Field, PageHeader, btn, btnGhost, card, input, Select } from "../ui";
 import { toCsv, download } from "../csv";
+import { api } from "../api";
 
 const KEYS = ["contract_effective_date", "broker_name", "broker_prc_no", "broker_prc_valid_until", "broker_firm", "default_agent_id"];
 
@@ -93,6 +94,80 @@ function Section({ title, sub, children }) {
       </div>
       {children}
     </fieldset>
+  );
+}
+
+// Push notifications on this device (admin/worker/push.js sends them, admin/sw.js shows them): a
+// task given to you, a new inquiry, a WhatsApp message, a reminder come due. Per device, per person.
+function Alerts() {
+  const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const [on, setOn] = useState(null); // null while checking
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!supported) return setOn(false);
+    navigator.serviceWorker.ready.then((r) => r.pushManager.getSubscription()).then((s) => setOn(!!s), () => setOn(false));
+  }, [supported]);
+
+  async function turnOn() {
+    setBusy(true);
+    setError("");
+    try {
+      if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked for this site. Allow them in the browser's site settings, then try again.");
+      const { key } = await api("push/key");
+      if (!key) throw new Error("Notifications aren't set up on the server yet (VAPID keys).");
+      const reg = await navigator.serviceWorker.ready;
+      const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
+      const { endpoint, keys } = sub.toJSON();
+      await run(supabase.from("push_subscriptions").upsert({ endpoint, p256dh: keys.p256dh, auth: keys.auth }));
+      setOn(true);
+      toast("Notifications on for this device");
+    } catch (err) {
+      setError(err.message);
+    }
+    setBusy(false);
+  }
+
+  async function turnOff() {
+    setBusy(true);
+    setError("");
+    try {
+      const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+      if (sub) {
+        await run(supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint));
+        await sub.unsubscribe();
+      }
+      setOn(false);
+    } catch (err) {
+      setError(err.message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <section className={`${card} grid gap-3 p-5`} aria-labelledby="alerts-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="alerts-title" className="font-display text-xl text-ink">Notifications</h2>
+          <p className="mt-1 max-w-prose text-sm text-muted">
+            Get an alert on this device when a task is given to you, a new inquiry comes in, a client messages on WhatsApp, or a reminder comes due. Turn it on for each phone and computer you use.
+          </p>
+        </div>
+        {on === null ? null : on ? (
+          <button type="button" className={btnGhost} onClick={turnOff} disabled={busy}>Turn off on this device</button>
+        ) : (
+          supported && <button type="button" className={btn} onClick={turnOn} disabled={busy}>{busy ? "Turning on…" : "Turn on notifications"}</button>
+        )}
+      </div>
+      {on && <p className="text-sm font-medium text-emerald-800">On for this device</p>}
+      {!supported && (
+        <p className="text-sm text-charcoal">
+          {device() === "ios" ? "On iPhone and iPad, install the app first (above), then open it from the home screen and turn notifications on here." : "This browser can't receive notifications. Try Chrome, Edge, Firefox or Safari."}
+        </p>
+      )}
+      <ErrorNote error={error} />
+    </section>
   );
 }
 
@@ -190,6 +265,7 @@ export default function Settings() {
       </form>
       <div className="mt-6 grid max-w-3xl gap-6">
         <InstallApp />
+        <Alerts />
         <Section title="Export all data" sub="Every listing, lead and commission row, as CSV files that open in Excel or Google Sheets.">
           {EXPORTS.map(([label, table, warn]) => (
             <div key={table} className="flex items-center justify-between gap-3 sm:col-span-2">

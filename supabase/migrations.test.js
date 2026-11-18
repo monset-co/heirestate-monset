@@ -213,4 +213,22 @@ await db.exec("insert into google_account (email, refresh_token, connected_by) v
 await fails(() => admin("select refresh_token from google_account"), /permission denied/);
 await fails(() => anon("select refresh_token from google_account"), /permission denied/);
 
+// the Notes board: a task is the whole team's; a private note is its writer's alone
+const AGENT = "00000000-0000-4000-8000-000000000003";
+await db.exec(`insert into second_factor (session_id, email, verified_at) values ('${AGENT}', 'agent@example.com', now())`);
+const agent = (sql, p) => as("authenticated", "agent@example.com", sql, p, AGENT);
+await admin("insert into tasks (body, assignee) values ('Call Cy about the 3BR', 'agent@example.com')");
+await admin("insert into tasks (body, private) values ('Listing on FB: Avida 2BR 28k', true)");
+assert.deepEqual((await agent("select body from tasks")).map((r) => r.body), ["Call Cy about the 3BR"], "the agent sees the task, not the private note");
+assert.equal((await agent("update tasks set body = 'x' where private returning id")).length, 0);
+assert.equal((await admin("select count(*)::int n from tasks"))[0].n, 2);
+await fails(() => agent("insert into tasks (body, private, created_by) values ('sneaky', true, 'heirestates.fh@gmail.com')"), /row-level security/);
+await fails(() => admin("insert into tasks (body, private, assignee) values ('x', true, 'agent@example.com')"), /private_is_unassigned/);
+assert.equal((await stranger("select count(*)::int n from tasks"))[0].n, 0);
+
+// push: each admin's devices are their own
+await agent("insert into push_subscriptions (endpoint, p256dh, auth) values ('https://push.example/agent', 'k', 'a')");
+assert.equal((await admin("select count(*)::int n from push_subscriptions"))[0].n, 0, "nobody sees another's devices");
+await fails(() => admin("insert into push_subscriptions (endpoint, email, p256dh, auth) values ('https://push.example/x', 'agent@example.com', 'k', 'a')"), /row-level security/);
+
 });

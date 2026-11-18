@@ -7,9 +7,10 @@
 //   /api/whatsapp/send, /media/:id     a reply from the admin, a photo or file they sent
 //   /api/google/*                      Google Calendar bookings, and its Gmail read-only (google.js, gmail.js)
 //   /api/geo?q=…                       where a place is, from OpenStreetMap (for a property's pin)
+//   /api/push/key, /push/task          push notifications: the key to sign up with, a task given (push.js)
 //   scheduled (every 15 minutes)       emails reminders that have come due
 //   PublicApi.inquiry()                saves an inquiry from the public sites and alerts its agent
-// Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN, GOOGLE_CLIENT_SECRET (wrangler secret put). The rest is in
+// Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN, GOOGLE_CLIENT_SECRET, VAPID_PRIVATE_KEY (wrangler secret put). The rest is in
 // wrangler.admin.jsonc's vars.
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { db, whoIs } from "./supabase.js";
@@ -18,6 +19,7 @@ import { newCode, hash, check, canSend, TTL, TRIES } from "./code.js";
 import * as whatsapp from "./whatsapp.js";
 import * as google from "./google.js";
 import * as gmail from "./gmail.js";
+import { notify } from "./push.js";
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 const fail = (error, status = 400) => json({ error }, status);
@@ -136,8 +138,18 @@ async function remind(env) {
       subject: `Follow up: ${r.lead?.name ?? "a lead"}`,
       text: `${r.body}\n\nLead: ${r.lead?.name ?? ""}\n${env.ADMIN_URL}/leads/${r.lead_id}?tab=Reminders`,
     });
+    await notify(env, to, { title: `Follow up: ${r.lead?.name ?? "a lead"}`, body: r.body, url: `/leads/${r.lead_id}?tab=Reminders` });
     await db(env).update(`reminders?id=eq.${r.id}`, { emailed_at: new Date().toISOString() });
   }
+}
+
+// A note on the Notes board given to someone else: tell them. Private notes never leave.
+async function pushTask(req, env, me) {
+  const { id } = (await req.json().catch(() => ({}))) ?? {};
+  const [t] = Number.isInteger(id) ? await db(env).get(`tasks?select=body,assignee,private,urgent&id=eq.${id}`) : [];
+  if (t && !t.private && t.assignee && t.assignee !== me.email)
+    await notify(env, t.assignee, { title: `${t.urgent ? "Urgent: " : ""}${me.admin.name} gave you a task`, body: t.body.slice(0, 200), url: "/notes" });
+  return json({ ok: true });
 }
 
 // What the public Worker (wrangler.jsonc's ADMIN binding) may ask of this one: save one inquiry it
@@ -172,6 +184,7 @@ export class PublicApi extends WorkerEntrypoint {
             .filter((l) => l !== undefined && l !== null && l !== false)
             .join("\n"),
         });
+        await notify(env, agent?.email ?? null, { title: `New inquiry: ${lead.name}`, body: listing?.title ?? lead.interest ?? "From the website", url: `/leads/${row.id}` });
       })().catch((e) => console.error("inquiry alert", e))
     );
     return { id: row.id };
@@ -244,6 +257,8 @@ export default {
           return fail(e.message, e.status); // "not connected" and Google's own refusals, worded for the admin
         }
       }
+      if (path === "push/key" && req.method === "GET") return json({ key: env.VAPID_PUBLIC_KEY ?? null });
+      if (path === "push/task" && req.method === "POST") return await pushTask(req, env, me);
       if (path === "geo" && req.method === "GET") return await geo(url.searchParams.get("q"));
       if (path === "visits" && req.method === "GET") {
         const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;

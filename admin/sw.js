@@ -19,6 +19,24 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// a push notification from the admin Worker (admin/worker/push.js): { title, body, url }
+self.addEventListener("push", (e) => {
+  const m = e.data?.json() ?? {};
+  e.waitUntil(self.registration.showNotification(m.title ?? "Heir Estates", { body: m.body, icon: "/icon-192.png", badge: "/icon-192.png", data: { url: m.url ?? "/" }, tag: m.url }));
+});
+
+// tapped: bring the app forward on that page, or open it
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url ?? "/", location.origin).href;
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const win = wins.find((w) => w.url.startsWith(location.origin));
+      return win ? win.navigate(url).then((w) => (w ?? win).focus()) : self.clients.openWindow(url);
+    })
+  );
+});
+
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   const url = new URL(req.url);
