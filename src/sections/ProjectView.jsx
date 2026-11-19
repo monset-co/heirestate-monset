@@ -362,7 +362,7 @@ function Project({ id, onClose, onGo, opened, heading: Title = "h2" }) {
         <a href={`${siteUrl(id)}listings`} className="font-inscription text-[0.78rem] tracking-[0.3em] text-ink/75 uppercase hover:text-gold-ink">
           Units for sale
         </a>
-        <Mark className="h-8 w-auto text-ink/70" />
+        <Mark className="h-12" />
       </footer>
     </>
   );
@@ -394,7 +394,7 @@ function TitleBlock({ name, facts }) {
     >
       <div className="flex items-center justify-between gap-4 bg-(--accent) px-5 py-4 text-paper">
         <span className="font-inscription text-[0.72rem] tracking-[0.3em] uppercase">{name}</span>
-        <Mark className="h-6 w-auto text-paper/90" />
+        <Mark className="h-10" />
       </div>
       {facts.map(([label, value], i) => (
         <motion.div

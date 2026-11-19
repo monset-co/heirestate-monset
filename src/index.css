@@ -117,8 +117,40 @@ body::after {
   outline-color: var(--color-champagne);
 }
 
-.lit-window {
-  filter: drop-shadow(0 0 5px rgb(196 155 76 / 0.75));
+/* the loader: the house navy at dusk, a warm glow rising behind the skyline as its windows switch on */
+.he-loader {
+  background:
+    radial-gradient(38% 34% at 50% 50%, rgb(196 155 76 / 0.22), transparent 70%),
+    radial-gradient(120% 90% at 50% 105%, var(--color-navy-raised), var(--color-navy) 45%, var(--color-navy-deep));
+}
+.he-loader::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(30% 26% at 50% 46%, rgb(246 211 107 / 0.28), transparent 72%);
+  opacity: 0;
+  animation: he-dusk 1.6s ease-out 1.2s forwards;
+}
+@keyframes he-dusk {
+  to {
+    opacity: 1;
+  }
+}
+/* repeat visits: the finished logo, no build */
+.he-static::before {
+  animation: none;
+  opacity: 1;
+}
+.he-static :is(.rise, .arc, .w, .slide, .turn, .hole, .ltr) {
+  animation: none;
+  transform: none;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .he-loader::before {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* the crawlable copy served in each site's HTML (sites.js); React replaces it on load */

@@ -55,14 +55,7 @@ export default function IslandNav({ section, onOpen, hidden }) {
       >
         <motion.div layout="position" transition={SPRING} className={`flex items-center gap-2 ${island ? "py-1.5 pr-1.5 pl-4" : "justify-between px-[clamp(4px,2.4vw,36px)] py-2"}`}>
           <motion.a layout="position" href="#top" aria-label="Heir Estates, back to top" className="flex items-center gap-3 py-1">
-            {island ? (
-              <>
-                <Mark className="h-6 w-auto text-paper" />
-                <span className="font-inscription hidden text-[0.72rem] tracking-[0.32em] sm:inline">HEIR ESTATES</span>
-              </>
-            ) : (
-              <Logo className="text-paper *:last:hidden sm:*:last:inline" />
-            )}
+            {island ? <Mark className="h-9" /> : <Logo />}
           </motion.a>
 
           {/* where you are on the page, with that project's colour */}

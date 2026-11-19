@@ -305,7 +305,7 @@ function Forthcoming({ onSection, sold, onBook }) {
           ))}
         </div>
         <Reveal>
-          <Mark className="h-14 w-auto text-paper" />
+          <Mark className="h-24" />
           <p data-rise className="font-display mt-8 text-[1.15rem] text-champagne italic">
             Forthcoming
           </p>
@@ -344,7 +344,7 @@ function Footer({ onOpen }) {
     <footer className="relative overflow-hidden bg-paper">
       <div className={`mx-auto grid max-w-[1480px] gap-x-16 gap-y-12 pt-[clamp(72px,12vh,128px)] lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] ${GUTTER}`}>
         <div>
-          <Mark className="h-12 w-auto text-ink" />
+          <Mark className="h-20" />
           <p className="font-display mt-6 max-w-[18ch] text-[clamp(1.8rem,3vw,2.6rem)] leading-[1.08] text-ink">Securing wealth, creating your legacy.</p>
           {agent && (
             <p className="mt-8 border-t border-ink/12 pt-5 text-[0.95rem] text-ink/75">
