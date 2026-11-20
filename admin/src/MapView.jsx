@@ -19,7 +19,12 @@ export default function MapView({ pins = [], ring, movable, onMove, onPin, class
 
   useEffect(() => {
     map.current = L.map(box.current, { center: movable ?? CEBU, zoom, scrollWheelZoom: false, attributionControl: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(map.current);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap contributors",
+      // OSM's tile policy refuses requests with no Referer; the site-wide no-referrer would send none
+      referrerPolicy: "strict-origin-when-cross-origin",
+    }).addTo(map.current);
     layer.current = L.layerGroup().addTo(map.current);
     // scroll zooms only once the map has been clicked, so the page still scrolls past it
     map.current.on("focus", () => map.current.scrollWheelZoom.enable());

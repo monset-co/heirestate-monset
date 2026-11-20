@@ -262,7 +262,7 @@ function PropertyView({ row: r, onEdit }) {
     ["Amenities and notes", r.notes],
   ].filter(([, v]) => v);
   const links = [
-    [r.source ? `${r.source}` : "Owner or broker", r.source_url],
+    ["Owner's profile", r.source_url],
     [r.fb_posted_on ? `Facebook post · ${date(r.fb_posted_on)}` : "Facebook post", r.fb_post_url],
     [`Rent.ph${r.rph_code ? ` · ${r.rph_code}` : ""}`, r.rph_url],
     [`Filipino Homes${r.fh_code ? ` · ${r.fh_code}` : ""}`, r.fh_url],
@@ -281,6 +281,9 @@ function PropertyView({ row: r, onEdit }) {
           <MapPin className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden /> {r.location}
         </p>
       )}
+      <p className="text-charcoal">
+        <span className="text-muted">Owner:</span> {r.source || <span className="text-muted">not recorded</span>}
+      </p>
       {r.lat != null ? (
         <div className="grid gap-1">
           <MapView className="h-48" zoom={16} pins={[{ id: r.id, lat: r.lat, lng: r.lng, color: pinOf(r) }]} />
@@ -326,7 +329,6 @@ function PropertyView({ row: r, onEdit }) {
           ))}
         </div>
       )}
-      {!links.length && r.source && <p className="text-xs text-muted">From {r.source}</p>}
       <div>
         <button type="button" className={btn} onClick={onEdit}>
           <Pencil className="size-4" aria-hidden /> Edit
