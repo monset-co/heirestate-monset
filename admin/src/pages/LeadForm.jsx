@@ -3,6 +3,7 @@
 // choices (admin/src/match.js), never typed, so the lead can be matched against the inventory and
 // the same wish always reads the same way.
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 import { supabase, run } from "../supabase";
 import { toast } from "../motion";
 import { ErrorNote, Field, Select, btn, input } from "../ui";
@@ -18,6 +19,27 @@ export const kindFor = (lookingTo, kind) => {
   return !kinds.length || kinds.includes(kind) ? kind : kinds[0];
 };
 const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
+
+// Someone who's already a lead with this mobile (its last 10 digits, however it's written) or this
+// email, so a second lead for the same person isn't made by mistake. It warns; it doesn't stop.
+export function useSameLead(mobile, email, except) {
+  const [hit, setHit] = useState(null);
+  useEffect(() => {
+    const d = String(mobile ?? "").replace(/\D/g, "").slice(-10);
+    const e = String(email ?? "").trim().toLowerCase();
+    const ors = [d.length >= 9 && `mobile.ilike.*${d.split("").join("*")}`, /^[^\s@",()]+@[^\s@",()]+\.[^\s@",()]+$/.test(e) && `email.eq."${e}"`].filter(Boolean);
+    if (!ors.length) return setHit(null);
+    const t = setTimeout(() => run(supabase.from("leads").select("id, name").or(ors.join(",")).neq("id", except ?? 0).limit(1)).then((r) => setHit(r[0] ?? null), () => setHit(null)), 400);
+    return () => clearTimeout(t);
+  }, [mobile, email, except]);
+  return hit;
+}
+export const SameLead = ({ lead, className = "" }) =>
+  lead && (
+    <p role="status" className={`rounded-md border border-gold/40 bg-gold/10 px-3 py-2 text-sm text-fg ${className}`}>
+      Already a lead: <Link to={`/leads/${lead.id}`} className="font-medium underline underline-offset-2">{lead.name}</Link>. Open them instead of adding them again?
+    </p>
+  );
 
 export default function LeadForm({ lead, onSaved }) {
   const isNew = !lead.id;
@@ -52,6 +74,7 @@ export default function LeadForm({ lead, onSaved }) {
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const handAdded = isNew || lead.source_site in SOURCES; // a site's form keeps its source
   const budget = pesos(f.budget);
+  const same = useSameLead(f.mobile, f.email, lead.id);
   const mobile = f.mobile.trim() ? tidyMobile(f.mobile) : "";
 
   async function save(e) {
@@ -116,8 +139,9 @@ export default function LeadForm({ lead, onSaved }) {
           <input type="tel" inputMode="tel" value={f.mobile} onChange={set("mobile")} onBlur={() => mobile && setF({ ...f, mobile })} maxLength={40} className={`${input} tabular-nums`} />
         </Field>
         <Field label="Email (optional)" hint="Can be added later.">
-          <input type="email" value={f.email} onChange={set("email")} maxLength={254} className={input} />
+          <input type="email" inputMode="email" autoComplete="off" value={f.email} onChange={set("email")} maxLength={254} className={input} />
         </Field>
+        <SameLead lead={same} className="sm:col-span-2" />
       </div>
 
       <h3 className="mt-2 font-display text-lg text-ink">What they want</h3>

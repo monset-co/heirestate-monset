@@ -12,14 +12,14 @@ import { useMe } from "../me";
 import { api } from "../api";
 import { Live, LiveLi, SkeletonRows, spring, toast } from "../motion";
 import { ErrorNote, PageHeader, Select, ask, input } from "../ui";
-import { Pad, over } from "./StickyNotes";
+import { Pad, over, useGrip } from "./StickyNotes";
 
 const TASK = "id, body, color, private, assignee, due_on, urgent, done_at, lead_id, created_by, created_at, lead:leads(id, name)";
 const COLORS = ["yellow", "pink", "blue", "green"];
 const TILT = [-1.2, 0.8, -0.4, 1.4];
 const MINE = "#mine";
 const ANYONE = "#anyone";
-const tool = "press rounded p-1.5 opacity-60 hover:bg-black/5 hover:opacity-100";
+const tool = "press grid min-h-9 min-w-9 place-items-center rounded p-1.5 opacity-60 hover:bg-black/5 hover:opacity-100";
 const today = () => new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd, local
 const day = new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric" });
 const URL_RE = /(https?:\/\/[^\s]+)/g;
@@ -130,7 +130,7 @@ export default function Notes() {
                 {c.key === MINE ? <Lock className="size-4 text-muted" aria-hidden /> : <UserRound className="size-4 text-muted" aria-hidden />}
                 <h2 className="font-semibold text-ink">{c.name}</h2>
                 <span className="text-xs text-muted tabular-nums">{notes.filter((t) => !t.done_at).length || ""}</span>
-                <button type="button" onClick={() => setDraft({ col: c.key })} className="press ml-auto rounded-md px-2 py-0.5 text-lg leading-none text-muted hover:bg-sunken hover:text-ink" aria-label={`New note in ${c.name}`}>
+                <button type="button" onClick={() => setDraft({ col: c.key })} className="press ml-auto grid size-10 place-items-center rounded-md text-lg leading-none text-muted hover:bg-sunken hover:text-ink" aria-label={`New note in ${c.name}`}>
                   +
                 </button>
               </header>
@@ -170,7 +170,8 @@ export default function Notes() {
         })}
       </div>
 
-      <div className="fixed right-4 z-20 flex items-end gap-4 bottom-[calc(var(--tabbar-h,0px)+env(safe-area-inset-bottom)+1rem)] md:right-6 md:bottom-6">
+      {/* on phones, above the shortcut ring's button */}
+      <div className="fixed right-4 z-20 flex items-end gap-4 bottom-[calc(var(--tabbar-h,0px)+env(safe-area-inset-bottom)+5.5rem)] md:right-6 md:bottom-6">
         <motion.div
           ref={bin}
           aria-hidden
@@ -272,7 +273,7 @@ function Draft({ from, leads, onSave, onCancel }) {
       {error && <ErrorNote error={error} />}
       <div className="flex items-center gap-1.5">
         {COLORS.map((c) => (
-          <button key={c} type="button" onClick={() => setF({ ...f, color: c })} aria-label={`${c} note`} aria-pressed={f.color === c} className={`sticky-${c} size-5 rounded-full border border-black/15 ${f.color === c ? "ring-2 ring-navy ring-offset-1" : ""}`} />
+          <button key={c} type="button" onClick={() => setF({ ...f, color: c })} aria-label={`${c} note`} aria-pressed={f.color === c} className={`sticky-${c} size-7 rounded-full border border-black/15 ${f.color === c ? "ring-2 ring-navy ring-offset-1" : ""}`} />
         ))}
         <button type="button" onClick={() => setF({ ...f, urgent: !f.urgent })} aria-pressed={f.urgent} title="Urgent" className={`${tool} ml-auto ${f.urgent ? "bg-burgundy text-cream opacity-100 hover:bg-burgundy" : ""}`}>
           <Flag className="size-4" aria-hidden />
@@ -325,10 +326,12 @@ function Note({ t, me, people, columns, onMove, onDrag, onRelease, onBinned, onC
     }
   }
 
+  const grip = useGrip();
   return (
     <motion.div
       ref={ref}
       drag
+      {...grip.drag}
       dragMomentum={false}
       onDragStart={() => {
         setLifted(true);
@@ -338,7 +341,7 @@ function Note({ t, me, people, columns, onMove, onDrag, onRelease, onBinned, onC
       onDrag={(_, i) => onDrag(i.point)}
       onDragEnd={(_, i) => release(i)}
       style={{ x, y, scale, rotate, opacity }}
-      className={`sticky-note sticky-${t.color} relative flex cursor-grab touch-none flex-col rounded-sm p-4 text-sm active:cursor-grabbing ${lifted ? "z-40 shadow-[0_18px_30px_-12px_rgb(12_21_38/0.45)]" : ""} ${t.done_at ? "opacity-60" : ""}`}
+      className={`sticky-note sticky-${t.color} relative flex cursor-grab ${grip.touch} flex-col rounded-sm p-4 text-sm active:cursor-grabbing ${lifted ? "z-40 shadow-[0_18px_30px_-12px_rgb(12_21_38/0.45)]" : ""} ${t.done_at ? "opacity-60" : ""}`}
     >
       {t.urgent && !t.done_at && <span className="mb-2 inline-flex w-fit items-center gap-1 rounded bg-burgundy px-1.5 py-0.5 text-[0.65rem] font-semibold tracking-wide text-cream uppercase"><Flag className="size-3" aria-hidden /> Urgent</span>}
       <p className={`whitespace-pre-wrap break-words ${t.done_at ? "line-through" : ""}`}>
@@ -362,6 +365,7 @@ function Note({ t, me, people, columns, onMove, onDrag, onRelease, onBinned, onC
         {from && <span>from {from.name.split(" ")[0]}</span>}
       </div>
       <div className="mt-2 flex items-center gap-1 border-t border-black/10 pt-2">
+        {grip.handle}
         <button type="button" onClick={() => onChange({ done_at: t.done_at ? null : new Date().toISOString() })} className={`${tool} ${t.done_at ? "opacity-100" : ""}`} aria-label={t.done_at ? "Not done" : "Done"} aria-pressed={!!t.done_at}>
           <Check className="size-4" />
         </button>

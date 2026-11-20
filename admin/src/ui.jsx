@@ -38,10 +38,16 @@ export function Field({ label, hint, children }) {
   );
 }
 
+// an error, brought into view when it appears: a failed save at the foot of a long form would
+// otherwise show its reason off-screen, at the top
 export function ErrorNote({ error }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (error) ref.current?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [error]);
   if (!error) return null;
   return (
-    <p role="alert" className="rounded-md border border-danger/30 bg-danger/8 px-3 py-2.5 text-sm text-danger">
+    <p ref={ref} role="alert" className="rounded-md border border-danger/30 bg-danger/8 px-3 py-2.5 text-sm text-danger">
       {error}
     </p>
   );
@@ -78,22 +84,37 @@ export function Badge({ value, children }) {
 /** Native <dialog>: Esc, focus trap and top layer for free; its motion lives in admin.css. */
 export function Modal({ open, onClose, title, children }) {
   const ref = useRef(null);
+  // typed into since it opened: a stray tap on the backdrop, Esc or × asks before throwing it away
+  const dirty = useRef(false);
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
+    if (open && !d.open) {
+      dirty.current = false;
+      d.showModal();
+    }
     if (!open && d.open) d.close();
   }, [open]);
+  async function close() {
+    if (dirty.current && !(await ask({ title: "Discard your changes?", body: "What you typed here isn't saved yet.", yes: "Discard", no: "Keep editing", danger: true }))) return;
+    onClose();
+  }
   return (
     <dialog
       ref={ref}
       onClose={onClose}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onInput={() => (dirty.current = true)}
+      onCancel={(e) => {
+        if (!dirty.current) return;
+        e.preventDefault();
+        close();
+      }}
+      onClick={(e) => e.target === e.currentTarget && close()}
       className="modal m-auto w-[min(38rem,calc(100vw-2rem))] rounded-xl border border-line bg-surface p-0 text-fg shadow-[0_24px_48px_-12px_rgb(12_21_38/0.35)]"
     >
-      <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
+      <div className="flex items-center justify-between border-b border-line px-5 py-2.5">
         <h2 className="font-display text-xl text-ink">{title}</h2>
-        <button onClick={onClose} className="press rounded-md p-1.5 text-muted hover:bg-sunken hover:text-fg" aria-label="Close">
+        <button onClick={close} className="press -mr-2 rounded-md p-3 text-muted hover:bg-sunken hover:text-fg" aria-label="Close">
           <X className="size-4" />
         </button>
       </div>
@@ -113,10 +134,10 @@ export function Drawer({ open, onClose, title, head, children }) {
   }, [open]);
   return (
     <dialog ref={ref} onClose={onClose} onClick={(e) => e.target === e.currentTarget && onClose()} className="side flex-col border-l border-line bg-surface p-0 text-fg shadow-[-24px_0_48px_-12px_rgb(12_21_38/0.35)] open:flex">
-      <div className="flex items-center gap-2 border-b border-line px-5 py-3.5">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-2.5">
         <h2 className="mr-auto font-display text-xl text-ink">{title}</h2>
         {head}
-        <button onClick={onClose} className="press rounded-md p-1.5 text-muted hover:bg-sunken hover:text-fg" aria-label="Close">
+        <button onClick={onClose} className="press -mr-2 rounded-md p-3 text-muted hover:bg-sunken hover:text-fg" aria-label="Close">
           <X className="size-4" />
         </button>
       </div>
@@ -398,7 +419,7 @@ export function Tabs({ items, value, onChange, label }) {
 
   const lead = { type: "spring", stiffness: 520, damping: 40 };
   const trail = { type: "spring", stiffness: 300, damping: 34, delay: 0.06 };
-  const tabCls = "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[5px] px-3.5 py-1.5 text-sm font-semibold";
+  const tabCls = "flex min-h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[5px] px-3.5 py-1.5 text-sm font-semibold";
   return (
     <div className="max-w-full overflow-x-auto">
       <div ref={listRef} role="tablist" aria-label={label} className="relative inline-flex rounded-md border border-line bg-sunken p-1">

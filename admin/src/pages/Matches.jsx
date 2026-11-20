@@ -17,7 +17,7 @@ const TONES = {
   emerald: "bg-emerald-600/12 text-emerald-800",
   gold: "bg-gold/25 text-gold-ink",
   burgundy: "bg-burgundy/12 text-burgundy",
-  off: "bg-sunken text-muted/80 line-through decoration-muted/50",
+  off: "bg-sunken text-muted line-through decoration-muted/50",
 };
 export const Chip = ({ tone, children }) => <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${TONES[tone]}`}>{children}</span>;
 

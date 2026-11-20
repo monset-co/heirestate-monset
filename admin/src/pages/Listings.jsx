@@ -1,6 +1,6 @@
 import { ChevronRight, Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { supabase, run, PHOTOS } from "../supabase";
 import { Live, LiveTr, SkeletonRows } from "../motion";
 import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, btn, card, input, th, Select } from "../ui";
@@ -12,7 +12,10 @@ export default function Listings() {
   const navigate = useNavigate();
   const [list, setList] = useState(null);
   const [error, setError] = useState("");
-  const [q, setQ] = useState({ text: "", type: "", status: "" });
+  // the filters live in the address, so they're still set on coming back from a listing
+  const [params, setParams] = useSearchParams();
+  const q = { text: params.get("q") ?? "", type: params.get("type") ?? "", status: params.get("status") ?? "" };
+  const setQ = (next) => setParams(Object.fromEntries(Object.entries({ q: next.text, type: next.type, status: next.status }).filter(([, v]) => v)), { replace: true });
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
@@ -35,7 +38,8 @@ export default function Listings() {
           (!q.status || l.status === q.status || (q.status === "draft" && !l.published)) &&
           (!q.text || `${l.title} ${l.location ?? ""} ${l.slug}`.toLowerCase().includes(q.text.trim().toLowerCase()))
       ),
-    [list, q]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [list, q.text, q.type, q.status]
   );
   const set = (k) => (e) => setQ({ ...q, [k]: e.target.value });
 
@@ -44,7 +48,7 @@ export default function Listings() {
       <PageHeader title="Listings" sub="Only published listings appear on the sites, and never while hidden. Changes are live within a minute.">
         <button className={btn} onClick={() => setAdding(true)}>
           <Plus className="size-4" aria-hidden />
-          New listing
+          Add listing
         </button>
       </PageHeader>
 
@@ -125,7 +129,7 @@ export default function Listings() {
         )}
       </div>
 
-      <Modal open={adding} onClose={() => setAdding(false)} title="New listing">
+      <Modal open={adding} onClose={() => setAdding(false)} title="Add listing">
         <NewListing onSaved={(l) => navigate(`/listings/${l.id}`)} />
       </Modal>
     </>

@@ -77,7 +77,7 @@ export default function Shell() {
           </div>
 
           {/* Desktop rail: the active pill springs between items */}
-          <nav aria-label="Main" className="mt-2 hidden flex-col gap-0.5 px-3 md:flex">
+          <nav aria-label="Main" className="mt-2 hidden min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 md:flex">
             {nav.map(({ to, label, icon: Icon }) => {
               const active = to === section;
               return (

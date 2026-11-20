@@ -46,9 +46,14 @@
   body {
     background: var(--color-bg);
   }
+  /* navy on the light page (gold there is too faint to see), gold on the navy rail and tab bar */
   :focus-visible {
-    outline: 2px solid var(--color-gold);
+    outline: 2px solid var(--color-navy);
     outline-offset: 2px;
+  }
+  nav[aria-label="Main"] :focus-visible,
+  aside > div:first-child > :focus-visible {
+    outline-color: var(--color-gold);
   }
   ::selection {
     background: var(--color-champagne);

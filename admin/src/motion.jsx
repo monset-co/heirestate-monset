@@ -73,8 +73,9 @@ const dismiss = (id) => {
   toasts = toasts.filter((t) => t.id !== id);
   emit();
 };
-export function toast(text, { action, ms = 4000 } = {}) {
-  const t = { id: Date.now() + Math.random(), text, action };
+// error: true shows it in red and leaves it up longer, so a failure doesn't read as a success
+export function toast(text, { action, error = false, ms = error ? 8000 : 4000 } = {}) {
+  const t = { id: Date.now() + Math.random(), text, action, error };
   toasts = [...toasts.slice(-2), t];
   emit();
   setTimeout(() => dismiss(t.id), ms);
@@ -111,7 +112,8 @@ export function Toaster() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8, scale: 0.98, transition: { duration: 0.16 } }}
             transition={spring}
-            className="pointer-events-auto flex max-w-md items-center gap-4 rounded-xl bg-navy py-2.5 pr-2.5 pl-4 text-sm text-cream shadow-[0_16px_40px_-12px_rgb(12_21_38/0.5)] ring-1 ring-cream/10"
+            role={t.error ? "alert" : undefined}
+            className={`pointer-events-auto flex max-w-md items-center gap-4 rounded-xl ${t.error ? "bg-danger" : "bg-navy"} py-2.5 pr-2.5 pl-4 text-sm text-cream shadow-[0_16px_40px_-12px_rgb(12_21_38/0.5)] ring-1 ring-cream/10`}
           >
             <span className="py-1">{t.text}</span>
             {t.action && (

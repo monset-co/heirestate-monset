@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { useBlocker } from "react-router";
 import { supabase, run } from "../supabase";
 import { toast } from "../motion";
-import { ErrorNote, Field, btn, card, input, Select } from "../ui";
+import { ErrorNote, Field, btn, card, input, Select, ask } from "../ui";
 import { STATUSES, TYPES } from "../../../src/listings/types.js";
 import { shape, check } from "../../../src/listings/rules.js";
 import { order, projects } from "../../../src/projects.js";
@@ -41,6 +42,19 @@ export default function ListingForm({ listing, onSaved }) {
   const t = TYPES[f.type];
   const set = (k) => (e) => setF({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
   const dirty = JSON.stringify(f) !== JSON.stringify(toForm(listing));
+
+  // unsaved changes: leaving (another tab, another page, closing the window) asks first
+  const blocker = useBlocker(dirty);
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    ask({ title: "Leave without saving?", body: "Your changes to this listing aren't saved yet.", yes: "Leave", no: "Keep editing", danger: true }).then((ok) => (ok ? blocker.proceed() : blocker.reset()));
+  }, [blocker]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e) => e.preventDefault();
+    addEventListener("beforeunload", warn);
+    return () => removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   async function save(e) {
     e.preventDefault();

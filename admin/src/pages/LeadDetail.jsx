@@ -127,13 +127,13 @@ function Temperature({ lead, onSaved }) {
       await run(supabase.from("leads").update({ temperature }).eq("id", lead.id));
     } catch (e) {
       onSaved(lead.temperature);
-      toast(e.message);
+      toast(e.message, { error: true });
     }
   }
   return (
     <div role="group" aria-label="How warm is this lead" className="inline-flex rounded-md border border-line bg-surface p-0.5">
       {Object.entries(TEMPS).map(([k, label]) => (
-        <button key={k} type="button" aria-pressed={lead.temperature === k} onClick={() => set(k)} className={`press rounded px-2.5 py-1 text-xs font-semibold transition-colors duration-150 ${lead.temperature === k ? { hot: "bg-burgundy text-cream", warm: "bg-gold text-navy", cold: "bg-sky-700 text-white" }[k] : "text-muted hover:text-fg"}`}>
+        <button key={k} type="button" aria-pressed={lead.temperature === k} onClick={() => set(k)} className={`press rounded px-3 py-2 text-xs font-semibold transition-colors duration-150 ${lead.temperature === k ? { hot: "bg-burgundy text-cream", warm: "bg-gold text-navy", cold: "bg-sky-700 text-white" }[k] : "text-muted hover:text-fg"}`}>
           {label}
         </button>
       ))}
@@ -178,16 +178,20 @@ function LeadChat({ lead, chat, setChat }) {
         <Chat thread={chat} onChange={(row) => setChat({ ...chat, ...row })} />
       </div>
     );
-  const digits = lead.mobile.replace(/\D/g, "").replace(/^0/, "63");
+  const digits = (lead.mobile ?? "").replace(/\D/g, "").replace(/^0/, "63");
   return (
     <div className={`${card} grid max-w-xl justify-items-start gap-3 p-5 text-sm`}>
       <h2 className="font-display text-xl text-ink">No WhatsApp chat yet</h2>
       <p className="text-muted">
         Their chat shows here once they write to the business number, or once a chat on that number is linked to them. To start one now, message them from a phone; WhatsApp only lets a business open a chat with an approved template.
       </p>
-      <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer" className={btnGhost}>
-        <MessageCircle className="size-4" aria-hidden /> Open in WhatsApp
-      </a>
+      {digits ? (
+        <a href={`https://wa.me/${digits}`} target="_blank" rel="noopener noreferrer" className={btnGhost}>
+          <MessageCircle className="size-4" aria-hidden /> Open in WhatsApp
+        </a>
+      ) : (
+        <p className="text-muted">No mobile on file: add one with Edit to open a chat.</p>
+      )}
     </div>
   );
 }
@@ -280,7 +284,7 @@ function Overview({ lead, onSaved, onEdit }) {
               <div key={k} className="grid grid-cols-[6.5rem_1fr] items-start gap-3">
                 <dt className="pt-0.5 text-muted">{k}</dt>
                 <dd className="flex flex-wrap gap-1.5">
-                  {v?.length ? v.map((x) => <Chip key={x} tone={tone}>{x}</Chip>) : <span className="text-muted/70">Any</span>}
+                  {v?.length ? v.map((x) => <Chip key={x} tone={tone}>{x}</Chip>) : <span className="text-muted">Any</span>}
                 </dd>
               </div>
             ))}
@@ -365,6 +369,17 @@ function Reminders({ lead }) {
     try {
       await run(supabase.from("reminders").update({ done_at }).eq("id", r.id));
     } catch (err) {
+      setList((l) => l.map((x) => (x.id === r.id ? { ...x, done_at: r.done_at } : x))); // put it back as it was
+      setError(err.message);
+    }
+  }
+
+  async function remove(r) {
+    if (!(await ask({ title: "Delete this reminder?", body: r.body, yes: "Delete", danger: true }))) return;
+    try {
+      await run(supabase.from("reminders").delete().eq("id", r.id));
+      setList((l) => l.filter((x) => x.id !== r.id));
+    } catch (err) {
       setError(err.message);
     }
   }
@@ -395,9 +410,11 @@ function Reminders({ lead }) {
           <ul className="divide-y divide-line">
             <Live>
               {list.map((r, i) => (
-                <LiveLi key={r.id} i={i} className="flex items-start gap-3 px-4 py-3 text-sm">
-                  <input type="checkbox" checked={!!r.done_at} onChange={() => toggle(r)} aria-label={`Done: ${r.body}`} className="mt-0.5 size-4 accent-navy" />
-                  <div className="min-w-0 flex-1">
+                <LiveLi key={r.id} i={i} className="flex items-start gap-1 py-1 pr-2 pl-1 text-sm">
+                  <label className="grid size-10 shrink-0 cursor-pointer place-items-center">
+                    <input type="checkbox" checked={!!r.done_at} onChange={() => toggle(r)} aria-label={`Done: ${r.body}`} className="size-4 accent-navy" />
+                  </label>
+                  <div className="min-w-0 flex-1 py-2">
                     <p className={r.done_at ? "text-muted line-through" : "text-fg"}>{r.body}</p>
                     <p className={`mt-0.5 text-xs ${!r.done_at && r.due_at < now ? "font-medium text-danger" : "text-muted"}`}>
                       {when(r.due_at)}
@@ -405,6 +422,9 @@ function Reminders({ lead }) {
                       {r.emailed_at && " · emailed"}
                     </p>
                   </div>
+                  <button type="button" onClick={() => remove(r)} aria-label={`Delete reminder: ${r.body}`} className="press grid size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-sunken hover:text-danger">
+                    <Trash2 className="size-4" aria-hidden />
+                  </button>
                 </LiveLi>
               ))}
             </Live>

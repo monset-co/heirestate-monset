@@ -1,8 +1,8 @@
 // A lead's notes as sticky notes, after the dashboard's task board (dashboard-monset/src/pages/tasks/
 // TaskKanban.tsx): tear a note off the pad in the corner and drop it on the wall, or tap the pad;
 // drag a note into the bin to throw it away (with Undo). Pinned notes show above every tab.
-import { Pin, PinOff, Plus, Trash2 } from "lucide-react";
-import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
+import { GripVertical, Pin, PinOff, Plus, Trash2 } from "lucide-react";
+import { animate, motion, useDragControls, useMotionValue, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, SkeletonRows, spring, toast } from "../motion";
@@ -12,7 +12,7 @@ import { when } from "../crm";
 export const NOTE = "id, body, author_email, created_at, pinned, color";
 const COLORS = ["yellow", "pink", "blue", "green"];
 const TILT = [-1.2, 0.8, -0.4, 1.4];
-const tool = "press rounded p-1.5 opacity-60 hover:bg-black/5 hover:opacity-100";
+const tool = "press grid min-h-9 min-w-9 place-items-center rounded p-1.5 opacity-60 hover:bg-black/5 hover:opacity-100";
 const next = (c) => COLORS[(COLORS.indexOf(c) + 1) % COLORS.length];
 // is a drag's page point over this element?
 export const over = (el, { x, y }) => {
@@ -35,6 +35,23 @@ export function Pinned({ notes, onOpen }) {
       ))}
     </section>
   );
+}
+
+// A note drags from anywhere with a mouse; on a touch screen only from its grip, so a swipe across
+// the notes still scrolls the page
+const fine = () => matchMedia("(pointer: fine)").matches;
+export function useGrip() {
+  const controls = useDragControls();
+  const mouse = fine();
+  return {
+    drag: { dragControls: controls, dragListener: mouse },
+    touch: mouse ? "touch-none" : "touch-pan-y",
+    handle: mouse ? null : (
+      <button type="button" onPointerDown={(e) => controls.start(e)} className="-m-1 touch-none rounded p-2 opacity-60" aria-label="Hold to drag the note">
+        <GripVertical className="size-4" aria-hidden />
+      </button>
+    ),
+  };
 }
 
 export function Notes({ leadId, notes, setNotes }) {
@@ -117,7 +134,8 @@ export function Notes({ leadId, notes, setNotes }) {
         {sorted && !sorted.length && !draft && <li className="col-span-full self-center text-center text-sm text-muted">No notes yet. Tear one off the pad in the corner and drop it here.</li>}
       </ul>
 
-      <div className="fixed right-4 z-20 flex items-end gap-4 bottom-[calc(var(--tabbar-h,0px)+env(safe-area-inset-bottom)+1rem)] md:right-6 md:bottom-6">
+      {/* on phones, above the shortcut ring's button */}
+      <div className="fixed right-4 z-20 flex items-end gap-4 bottom-[calc(var(--tabbar-h,0px)+env(safe-area-inset-bottom)+5.5rem)] md:right-6 md:bottom-6">
         <motion.div
           ref={bin}
           aria-hidden
@@ -238,7 +256,7 @@ function Draft({ from, onSave, onCancel }) {
       {error && <ErrorNote error={error} />}
       <div className="flex items-center gap-1.5">
         {COLORS.map((c) => (
-          <button key={c} type="button" onClick={() => setF({ ...f, color: c })} aria-label={`${c} note`} aria-pressed={f.color === c} className={`sticky-${c} size-5 rounded-full border border-black/15 ${f.color === c ? "ring-2 ring-navy ring-offset-1" : ""}`} />
+          <button key={c} type="button" onClick={() => setF({ ...f, color: c })} aria-label={`${c} note`} aria-pressed={f.color === c} className={`sticky-${c} size-7 rounded-full border border-black/15 ${f.color === c ? "ring-2 ring-navy ring-offset-1" : ""}`} />
         ))}
         <button type="button" onClick={() => setF({ ...f, pinned: !f.pinned })} aria-pressed={f.pinned} className={`${tool} ml-auto ${f.pinned ? "opacity-100" : ""}`} title="Pin to the top of the lead">
           <Pin className={`size-4 ${f.pinned ? "fill-current" : ""}`} aria-hidden />
@@ -289,10 +307,12 @@ function Note({ n, onDrag, onRelease, onBinned, onChange }) {
     }
   }
 
+  const grip = useGrip();
   return (
     <motion.div
       ref={ref}
       drag
+      {...grip.drag}
       dragMomentum={false}
       onDragStart={() => {
         setLifted(true);
@@ -302,7 +322,7 @@ function Note({ n, onDrag, onRelease, onBinned, onChange }) {
       onDrag={(_, i) => onDrag(i.point)}
       onDragEnd={(_, i) => release(i)}
       style={{ x, y, scale, rotate, opacity }}
-      className={`sticky-note sticky-${n.color} relative flex h-full cursor-grab touch-none flex-col rounded-sm p-4 text-sm active:cursor-grabbing ${lifted ? "z-40 shadow-[0_18px_30px_-12px_rgb(12_21_38/0.45)]" : ""}`}
+      className={`sticky-note sticky-${n.color} relative flex h-full cursor-grab ${grip.touch} flex-col rounded-sm p-4 text-sm active:cursor-grabbing ${lifted ? "z-40 shadow-[0_18px_30px_-12px_rgb(12_21_38/0.45)]" : ""}`}
     >
       {n.pinned && <span aria-hidden className="sticky-tape" />}
       <p className="flex-1 whitespace-pre-wrap break-words">{n.body}</p>
@@ -310,6 +330,7 @@ function Note({ n, onDrag, onRelease, onBinned, onChange }) {
         {n.author_email?.split("@")[0]} · <time dateTime={n.created_at}>{when(n.created_at)}</time>
       </p>
       <div className="mt-2 flex items-center gap-1 border-t border-black/10 pt-2">
+        {grip.handle}
         <button type="button" onClick={() => onChange({ color: next(n.color) })} className={tool} aria-label="Change colour">
           <span className={`sticky-${next(n.color)} block size-4 rounded-full border border-black/20`} />
         </button>

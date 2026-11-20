@@ -2,13 +2,13 @@
 // Gmail's own search, a chip on anyone who's a lead, and the message beside the list. A message's
 // HTML shows in a sandbox with no scripts, and its remote images (which tell the sender it was
 // opened) stay blocked until asked for. Replying happens in Gmail.
-import { ArrowLeft, ExternalLink, Image, Inbox, Paperclip, Search, Send } from "lucide-react";
+import { ArrowLeft, ExternalLink, Image, Inbox, Paperclip, Search, Send, UserPlus } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { api } from "../api";
 import { supabase, run } from "../supabase";
-import { SkeletonRows, spring } from "../motion";
+import { SkeletonRows, spring, toast } from "../motion";
 import { Empty, ErrorNote, PageHeader, TabPanel, btnGhost, card, input } from "../ui";
 import { Chip } from "./Matches";
 
@@ -41,6 +41,17 @@ export default function Email() {
   const [error, setError] = useState("");
   const [account, setAccount] = useState("");
   const [open, setOpen] = useState(null); // the message being read
+  // on phones the message replaces the list: start it at the top, and come back to where the list was
+  const listAt = useRef(0);
+  const read = (m) => {
+    if (!open) listAt.current = scrollY;
+    setOpen(m);
+    if (!matchMedia("(min-width: 1024px)").matches) scrollTo(0, 0);
+  };
+  const back = () => {
+    setOpen(null);
+    requestAnimationFrame(() => scrollTo(0, listAt.current));
+  };
 
   async function load(page) {
     setError("");
@@ -127,12 +138,13 @@ export default function Email() {
                     <li key={m.id}>
                       <button
                         type="button"
-                        onClick={() => setOpen(m)}
+                        onClick={() => read(m)}
                         aria-current={open?.id === m.id || undefined}
                         className={`grid w-full gap-0.5 px-4 py-3 text-left text-sm transition-colors hover:bg-bg ${open?.id === m.id ? "bg-sunken/70" : ""}`}
                       >
                         <span className="flex items-center gap-2">
-                          <span aria-label={m.unread ? "Unread" : undefined} className={`size-2 shrink-0 rounded-full ${m.unread ? "bg-gold" : "bg-transparent"}`} />
+                          <span aria-hidden className={`size-2 shrink-0 rounded-full ${m.unread ? "bg-gold" : "bg-transparent"}`} />
+                          {m.unread && <span className="sr-only">Unread:</span>}
                           <span className={`min-w-0 flex-1 truncate ${m.unread ? "font-semibold text-ink" : "text-fg"}`}>{box === "sent" ? `To ${nameOf(who)}` : nameOf(who)}</span>
                           <span className="shrink-0 text-xs text-muted tabular-nums">{when(m.at)}</span>
                         </span>
@@ -158,7 +170,14 @@ export default function Email() {
         <div className={open ? "" : "hidden lg:block"}>
           {open ? (
             <TabPanel key={open.id}>
-              <Message summary={open} lead={leads[addressOf(box === "sent" ? open.to : open.from)]} onBack={() => setOpen(null)} />
+              <Message
+                summary={open}
+                who={box === "sent" ? open.to : open.from}
+                lead={leads[addressOf(box === "sent" ? open.to : open.from)]}
+                onLead={(l) => setLeads((all) => ({ ...all, [l.email]: l }))}
+                account={account}
+                onBack={back}
+              />
             </TabPanel>
           ) : (
             <div className={`${card} flex min-h-64 items-center justify-center`}>
@@ -171,9 +190,26 @@ export default function Email() {
   );
 }
 
-function Message({ summary, lead, onBack }) {
+function Message({ summary, who, lead, onLead, account, onBack }) {
   const [m, setM] = useState(null);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const navigate = useNavigate();
+  // someone who isn't a lead yet: one click makes them one, from their name and address
+  async function makeLead() {
+    setBusy(true);
+    setError("");
+    try {
+      const email = addressOf(who);
+      const name = nameOf(who).slice(0, 100).padEnd(2, "?");
+      const l = await run(supabase.from("leads").insert({ source_site: "email", name, email, interest: summary.subject?.slice(0, 200) || "Email inquiry" }).select("id, name, email").single());
+      onLead(l);
+      toast(`${l.name} is now a lead`, { action: { label: "Open", run: () => navigate(`/leads/${l.id}`) } });
+    } catch (e) {
+      setError(e.message);
+    }
+    setBusy(false);
+  }
   const [images, setImages] = useState(false);
   useEffect(() => {
     api(`google/mail/${summary.id}`).then(setM, (e) => setError(e.message));
@@ -193,10 +229,16 @@ function Message({ summary, lead, onBack }) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           <span className="font-medium text-fg">{nameOf(summary.from)}</span>
           <span className="text-muted">{addressOf(summary.from)}</span>
-          {lead && (
+          {lead ? (
             <Link to={`/leads/${lead.id}`}>
               <Chip tone="navy">Lead: {lead.name}</Chip>
             </Link>
+          ) : (
+            addressOf(who) !== account && (
+              <button type="button" onClick={makeLead} disabled={busy} className="press inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-1 text-xs text-muted hover:text-fg disabled:opacity-50">
+                <UserPlus className="size-3.5" aria-hidden /> {busy ? "Making…" : "Make a lead"}
+              </button>
+            )
           )}
           <span className="ml-auto text-xs text-muted tabular-nums">{new Date(summary.at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}</span>
         </div>
@@ -234,7 +276,7 @@ function Message({ summary, lead, onBack }) {
         </>
       )}
       <div>
-        <a href={`https://mail.google.com/mail/u/0/#all/${summary.thread}`} target="_blank" rel="noopener noreferrer" className={btnGhost}>
+        <a href={`https://mail.google.com/mail/u/${account ? encodeURIComponent(account) : 0}/#all/${summary.thread}`} target="_blank" rel="noopener noreferrer" className={btnGhost}>
           <ExternalLink className="size-4" aria-hidden /> Open in Gmail to reply
         </a>
       </div>

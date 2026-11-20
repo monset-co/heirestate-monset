@@ -4,7 +4,7 @@ import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { useMe } from "../me";
 import { Live, LiveTr, SkeletonRows, toast } from "../motion";
-import { Badge, ErrorNote, Field, Modal, PageHeader, btn, btnGhost, card, input, th } from "../ui";
+import { Badge, ErrorNote, Field, Modal, PageHeader, btn, btnGhost, card, input, th, ask } from "../ui";
 
 export default function Users() {
   const me = useMe();
@@ -22,11 +22,12 @@ export default function Users() {
       await api("invite", { email: u.email });
       toast(`Invitation sent to ${u.email}`);
     } catch (err) {
-      toast(err.message);
+      toast(err.message, { error: true });
     }
   }
 
   async function toggle(u) {
+    if (u.active && !(await ask({ title: `Switch off ${u.name}?`, body: "They're signed out and can't sign in until someone switches them back on.", yes: "Switch off", danger: true }))) return;
     setError("");
     try {
       await run(supabase.from("admin_users").update({ active: !u.active }).eq("id", u.id));
@@ -42,7 +43,7 @@ export default function Users() {
       <PageHeader title="Users" sub="Everyone here can use the whole admin. They sign in with their password, then a code sent to their email. Switching someone off locks them out at once.">
         <button className={btn} onClick={() => setAdding(true)}>
           <Plus className="size-4" aria-hidden />
-          Add a user
+          Add user
         </button>
       </PageHeader>
       <div className="mt-4">
@@ -73,7 +74,7 @@ export default function Users() {
                       {u.id === me.id ? (
                         <Badge value="published">You</Badge>
                       ) : (
-                        <span className="inline-flex gap-2">
+                        <span className="flex flex-wrap justify-end gap-2">
                           {u.active && (
                             <button className={btnGhost} onClick={() => invite(u)}>
                               Send invite
@@ -93,7 +94,7 @@ export default function Users() {
         )}
       </div>
 
-      <Modal open={adding} onClose={() => setAdding(false)} title="Add a user">
+      <Modal open={adding} onClose={() => setAdding(false)} title="Add user">
         <AddUser
           onSaved={async (u) => {
             setAdding(false);
@@ -102,7 +103,7 @@ export default function Users() {
               await api("invite", { email: u.email });
               toast(`${u.name} is added, and an invitation to set a password is on its way to ${u.email}`);
             } catch (err) {
-              toast(`${u.name} is added, but the invitation didn't send: ${err.message}`);
+              toast(`${u.name} is added, but the invitation didn't send: ${err.message}`, { error: true });
             }
           }}
         />

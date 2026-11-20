@@ -1,13 +1,14 @@
 // WhatsApp: every chat on the business number, live. Chats on the left, the open one on the right (on
 // phones, one at a time). Messages arrive through Meta's webhook (admin/worker/whatsapp.js) and show
 // here through Supabase Realtime; replies go out through the Worker.
-import { AlertCircle, Check, CheckCheck, ChevronLeft, Clock, Download, FolderInput, ImageIcon, Send, Sparkles, UserPlus } from "lucide-react";
+import { AlertCircle, Check, CheckCheck, ChevronLeft, Clock, Download, FolderInput, ImageIcon, Link2, Send, Sparkles, UserPlus } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate, useParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { SkeletonRows, toast } from "../motion";
 import { saveFile } from "./FilesTab";
+import { useSameLead } from "./LeadForm";
 import { Empty, ErrorNote, btn, card, input, Select } from "../ui";
 import { TEMPLATES, ago, when } from "../crm";
 
@@ -123,7 +124,7 @@ export function Chat({ thread, onChange }) {
   return (
     <>
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3">
-        <Link to="/whatsapp" className="-ml-1 rounded p-1 text-muted hover:text-fg md:hidden" aria-label="All chats">
+        <Link to="/whatsapp" className="-my-1 -ml-2 grid size-10 place-items-center rounded text-muted hover:text-fg md:hidden" aria-label="All chats">
           <ChevronLeft className="size-5" aria-hidden />
         </Link>
         <div className="min-w-0 flex-1">
@@ -157,7 +158,8 @@ export function Chat({ thread, onChange }) {
                 maxLength={4096}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && send(e)}
+                // Enter sends only with a real keyboard: a phone's Enter is the new line
+                onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && matchMedia("(pointer: fine)").matches && send(e)}
                 placeholder="Reply on WhatsApp… (Shift+Enter for a new line)"
                 className={`${input} resize-none`}
               />
@@ -315,16 +317,20 @@ function Templates({ thread }) {
 function LeadLink({ thread, onChange }) {
   const navigate = useNavigate();
   const [leads, setLeads] = useState(null);
+  const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // a lead already on this number (written any way): offered first, so it isn't made twice
+  const same = useSameLead(thread.lead ? "" : thread.wa_id);
   if (thread.lead) return <Link to={`/leads/${thread.lead.id}`} className="text-sm underline underline-offset-2">Open lead</Link>;
 
-  async function link(e) {
-    const lead_id = Number(e.target.value);
-    if (!lead_id) return;
+  const optionOf = (l) => `${l.name} · ${l.mobile ?? "no mobile"}`;
+  async function link(lead) {
+    if (!lead) return;
+    const lead_id = lead.id;
     try {
       await run(supabase.from("wa_threads").update({ lead_id }).eq("id", thread.id));
-      onChange({ id: thread.id, lead_id, lead: leads.find((l) => l.id === lead_id) });
+      onChange({ id: thread.id, lead_id, lead: { id: lead.id, name: lead.name } });
     } catch (err) {
       setError(err.message);
     }
@@ -348,22 +354,35 @@ function LeadLink({ thread, onChange }) {
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
+    {error && <p role="alert" className="w-full text-xs text-danger">{error}</p>}
+    {same && (
+      <button type="button" onClick={() => link(same)} className="press inline-flex items-center gap-1.5 rounded-md border border-gold/50 bg-gold/10 px-2.5 py-1.5 text-sm">
+        <Link2 className="size-4" aria-hidden /> Link to {same.name} (same number)
+      </button>
+    )}
     <button type="button" onClick={make} disabled={busy} className="press inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm hover:border-muted/50 disabled:opacity-50" title={error || "Make a lead from this chat"}>
       <UserPlus className="size-4" aria-hidden /> {busy ? "Making…" : "Make a lead"}
     </button>
-    <label className="text-sm">
+    <label className="min-w-0 flex-1 text-sm sm:flex-none">
       <span className="sr-only">Link to a lead</span>
-      <select
-        defaultValue=""
-        onFocus={() => leads || run(supabase.from("leads").select("id, name, mobile").order("created_at", { ascending: false }).limit(500)).then(setLeads, (e) => setError(e.message))}
-        onChange={link}
-        className={`${input} w-48 py-1.5`}
-        title={error || undefined}
-      >
-        <option value="">Link to a lead…</option>
-        {leads?.map((l) => <option key={l.id} value={l.id}>{l.name} · {l.mobile}</option>)}
-      </select>
+      {/* type a name or a number; picking one from the list links it */}
+      <input
+        list={`wa-leads-${thread.id}`}
+        value={text}
+        placeholder="Link to a lead: name or mobile"
+        autoComplete="off"
+        onFocus={() => leads || run(supabase.from("leads").select("id, name, mobile").order("created_at", { ascending: false }).limit(2000)).then(setLeads, (e) => setError(e.message))}
+        onChange={(e) => {
+          setText(e.target.value);
+          const hit = leads?.find((l) => optionOf(l) === e.target.value);
+          if (hit) link(hit);
+        }}
+        className={`${input} w-full py-1.5 sm:w-60`}
+      />
+      <datalist id={`wa-leads-${thread.id}`}>
+        {leads?.map((l) => <option key={l.id} value={optionOf(l)} />)}
+      </datalist>
     </label>
     </div>
   );

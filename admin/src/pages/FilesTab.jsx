@@ -208,7 +208,7 @@ export default function FilesTab({ leadId, lead, onChecked }) {
       >
         {check && (() => {
           const [Icon, label, tone] = STATUS[check];
-          return <Icon className={`size-4 shrink-0 ${folder === k ? "" : tone}`} aria-label={label} />;
+          return <Icon className={`size-4 shrink-0 ${folder === k ? "" : tone}`} role="img" aria-label={label} />;
         })()}
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <span className={`text-xs tabular-nums ${folder === k ? "text-cream/70" : "text-muted"}`}>{n || ""}</span>

@@ -37,6 +37,7 @@ export default function PhotosTab({ listingId }) {
     e.target.value = "";
     setError("");
     let sort = photos.length ? Math.max(...photos.map((p) => p.sort)) + 1 : 0;
+    let added = 0;
     for (const [i, file] of files.entries()) {
       setBusy(`Uploading ${i + 1} of ${files.length}…`);
       const key = `${listingId}/${crypto.randomUUID()}.webp`;
@@ -46,6 +47,7 @@ export default function PhotosTab({ listingId }) {
           const p = await run(supabase.from("listing_photos").insert({ listing_id: listingId, storage_key: key, sort: sort++ }).select("id, storage_key, alt, sort").single());
           const [withUrl] = await signed([p]);
           setPhotos((ps) => [...ps, withUrl]);
+          added++;
         } catch (err) {
           await supabase.storage.from(PHOTOS).remove([key]); // no file without its row
           throw err;
@@ -55,7 +57,7 @@ export default function PhotosTab({ listingId }) {
       }
     }
     setBusy("");
-    if (files.length) toast(files.length === 1 ? "Photo added" : `${files.length} photos added`);
+    if (added) toast(added === 1 ? "Photo added" : `${added} photos added`);
   }
 
   async function move(i, by) {

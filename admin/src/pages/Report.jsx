@@ -92,7 +92,8 @@ export default function Report() {
         ) : !rows.length ? (
           <p className="mt-6 font-display text-xl text-ink">none</p>
         ) : (
-          <table className="mt-5 w-full text-sm">
+          <div className="mt-5 overflow-x-auto print:overflow-visible">
+          <table className="w-full text-sm">
             <thead className="border-b border-ink/30 text-left">
               <tr>
                 {["Date of sale", "Paid on", "Project", "Unit code", "Sale no. in Season", "Gross commission", "Fee due (1% / 8.5%)"].map((h, i) => (
@@ -122,6 +123,7 @@ export default function Report() {
               </tr>
             </tfoot>
           </table>
+          </div>
         )}
         <p className="mt-5 text-xs text-muted">
           No buyer names or personal details are entered in this report. If no commission was received this month, write "none". Sent by email under Section 14.4.

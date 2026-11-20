@@ -245,7 +245,7 @@ export default function Inventory() {
       {list && shown.length > 0 && <p className="mt-2 text-xs text-muted">{shown.length} shown</p>}
 
       <Modal open={!!open} onClose={() => setOpen(null)} title={open?.id ? open.type || "Property" : "Add property"}>
-        {open && (editing ? <PropertyForm row={open} onSaved={saved} buildings={buildings} /> : <PropertyView row={open} onEdit={() => setEditing(true)} />)}
+        {open && (editing ? <PropertyForm row={open} onSaved={saved} buildings={buildings} owners={[...new Set((list ?? []).map((r) => r.source).filter(Boolean))].sort((a, b) => a.localeCompare(b))} /> : <PropertyView row={open} onEdit={() => setEditing(true)} />)}
       </Modal>
     </>
   );
@@ -341,7 +341,7 @@ function PropertyView({ row: r, onEdit }) {
 const FURNISHING = ["", "Fully furnished", "Semi-furnished", "Furnished", "Finished", "Unfurnished"];
 const TEXT = ["type", "location", "building", "price_text", "price_note", "furnishing", "specs", "inclusions", "payment_terms", "notes", "summary", "source", "source_url", "fb_post_note", "fb_post_url", "rph_code", "rph_url", "fh_code", "fh_url", "available_from", "fb_posted_on"];
 
-function PropertyForm({ row, onSaved, buildings = [] }) {
+function PropertyForm({ row, onSaved, buildings = [], owners = [] }) {
   const [f, setF] = useState(() => ({
     ...Object.fromEntries(TEXT.map((k) => [k, row[k] ?? ""])),
     status: row.status ?? [],
@@ -444,7 +444,7 @@ function PropertyForm({ row, onSaved, buildings = [] }) {
         <legend className="label mb-1.5 text-ink">Status</legend>
         <div className="flex flex-wrap gap-2">
           {STATUSES.map((s) => (
-            <label key={s} className={`press cursor-pointer rounded-full border px-3 py-1 text-sm ${f.status.includes(s) ? "border-navy bg-navy text-cream" : "border-line text-fg"}`}>
+            <label key={s} className={`press cursor-pointer rounded-full border px-3 py-1.5 text-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-navy ${f.status.includes(s) ? "border-navy bg-navy text-cream" : "border-line text-fg"}`}>
               <input type="checkbox" className="sr-only" checked={f.status.includes(s)} onChange={() => toggle(s)} />
               {s}
             </label>
@@ -531,7 +531,10 @@ function PropertyForm({ row, onSaved, buildings = [] }) {
       <h3 className="mt-2 font-display text-lg text-ink">Source and posts</h3>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Owner or broker">
-          <input value={f.source} onChange={set("source")} maxLength={300} className={input} />
+          <input value={f.source} onChange={set("source")} maxLength={300} list="inventory-owners" autoComplete="off" className={input} />
+          <datalist id="inventory-owners">
+            {owners.map((o) => <option key={o} value={o} />)}
+          </datalist>
         </Field>
         {link("source_url", "Their profile or post")}
         <Field label="Posted on Facebook">

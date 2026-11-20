@@ -41,7 +41,7 @@ export default function Commissions() {
           <FileText className="size-4" aria-hidden /> Monthly report
         </Link>
         <button className={btn} onClick={() => setEditing({})}>
-          <Plus className="size-4" aria-hidden /> Record a sale
+          <Plus className="size-4" aria-hidden /> Add sale
         </button>
       </PageHeader>
 
@@ -83,7 +83,7 @@ export default function Commissions() {
                   <LiveTr key={c.id} i={i} onClick={() => setEditing(c)} className={`cursor-pointer transition-colors hover:bg-bg ${c.cancelled ? "text-muted" : ""}`}>
                     <td className="px-4 py-3 whitespace-nowrap">{day(c.sale_date)}</td>
                     <td className="px-4 py-3">
-                      <span className="font-medium text-fg">{c.unit_code}</span>
+                      <button type="button" onClick={() => setEditing(c)} className="text-left font-medium text-fg outline-offset-4 hover:text-accent-ink">{c.unit_code}</button>
                       <span className="block text-xs text-muted">
                         {whereOf(c)}
                         {c.via_sites && " · through the sites"}
@@ -104,7 +104,7 @@ export default function Commissions() {
         )}
       </div>
 
-      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? "Commission" : "Record a sale"}>
+      <Modal open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? "Commission" : "Add sale"}>
         {editing && (
           <CommissionForm
             row={editing}
