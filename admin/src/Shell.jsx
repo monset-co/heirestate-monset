@@ -12,24 +12,47 @@ import { supabase } from "./supabase";
 import { useMe } from "./me";
 import { SkeletonRows, spring, Toaster } from "./motion";
 import { Confirmer } from "./ui";
+import Rail, { useSlim } from "./Rail";
 
-// tab: on the phone tab bar (the rest live under More); quick: also in the thumb ring
-export const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, tab: true },
-  { to: "/leads", label: "Leads", icon: Inbox, tab: true },
-  { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, tab: true },
-  { to: "/notes", label: "Notes", icon: StickyNote, quick: true },
-  { to: "/documents", label: "Documents", icon: FolderOpen },
-  { to: "/presentations", label: "Presentations", icon: Presentation },
-  { to: "/email", label: "Email", icon: Mail, quick: true },
-  { to: "/inventory", label: "Inventory", icon: Boxes, quick: true },
-  { to: "/calendar", label: "Calendar", icon: CalendarDays, quick: true },
-  { to: "/listings", label: "Listings", icon: Building2, tab: true },
-  { to: "/commissions", label: "Commissions", icon: Receipt },
-  { to: "/users", label: "Users", icon: Users },
-  { to: "/settings", label: "Settings", icon: Settings },
-  { to: "/guide", label: "Guide", icon: BookOpen },
+// Grouped by what each page is for. tab: on the phone tab bar (the rest live under More);
+// quick: its place in the thumb ring
+export const groups = [
+  { name: null, items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard, tab: true }] },
+  {
+    name: "Clients",
+    items: [
+      { to: "/leads", label: "Leads", icon: Inbox, tab: true },
+      { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, tab: true },
+      { to: "/email", label: "Email", icon: Mail, quick: 2 },
+      { to: "/calendar", label: "Calendar", icon: CalendarDays, quick: 4 },
+      { to: "/notes", label: "Notes", icon: StickyNote, quick: 1 },
+    ],
+  },
+  {
+    name: "Properties",
+    items: [
+      { to: "/inventory", label: "Inventory", icon: Boxes, quick: 3 },
+      { to: "/listings", label: "Listings", icon: Building2, tab: true },
+    ],
+  },
+  {
+    name: "Library",
+    items: [
+      { to: "/documents", label: "Documents", icon: FolderOpen },
+      { to: "/presentations", label: "Presentations", icon: Presentation },
+    ],
+  },
+  {
+    name: "Office",
+    items: [
+      { to: "/commissions", label: "Commissions", icon: Receipt },
+      { to: "/users", label: "Users", icon: Users },
+      { to: "/settings", label: "Settings", icon: Settings },
+      { to: "/guide", label: "Guide", icon: BookOpen },
+    ],
+  },
 ];
+export const nav = groups.flatMap((g) => g.items);
 
 const signOut = () => supabase.auth.signOut();
 
@@ -46,7 +69,7 @@ function InstallButton({ className }) {
   return (
     <button onClick={go} className={className}>
       <Download className="size-4" aria-hidden />
-      Install app
+      <span>Install app</span>
     </button>
   );
 }
@@ -66,46 +89,26 @@ export default function Shell() {
   const section = "/" + (pathname.split("/")[1] ?? "");
   const [more, setMore] = useState(false);
   const moreActive = !nav.some((n) => n.tab && n.to === section);
+  const [slim, toggleSlim] = useSlim();
 
   return (
-    <div data-sheet={more ? "open" : undefined} className="min-h-dvh transition-colors duration-300 [--tabbar-h:4rem] data-[sheet=open]:bg-navy-deep md:grid md:grid-cols-[15rem_1fr] md:[--tabbar-h:0px] print:block">
+    <div data-sheet={more ? "open" : undefined} style={{ "--rail": slim ? "72px" : "15rem" }} className="min-h-dvh transition-[background-color,grid-template-columns] duration-300 ease-[var(--ease-out)] [--tabbar-h:4rem] data-[sheet=open]:bg-navy-deep md:grid md:grid-cols-[var(--rail)_minmax(0,1fr)] md:[--tabbar-h:0px] print:block">
       <div className="app-page bg-bg md:contents">
-        <aside className="sticky top-0 z-20 flex flex-col print:hidden bg-side pt-[env(safe-area-inset-top)] text-cream md:h-dvh md:pt-0">
-          <div className="flex h-16 items-center justify-between gap-2 px-4 md:h-20 md:px-5">
-            <Mark />
-            <Bell />
-          </div>
-
-          {/* Desktop rail: the active pill springs between items */}
-          <nav aria-label="Main" className="mt-2 hidden min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 md:flex">
-            {nav.map(({ to, label, icon: Icon }) => {
-              const active = to === section;
-              return (
-                <NavLink key={to} to={to} end={to === "/"} className={`press relative flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium ${active ? "text-cream" : "text-cream/60 hover:text-cream"}`}>
-                  {active && (
-                    <motion.span layoutId="nav-pill" transition={spring} className="absolute inset-0 rounded-md bg-side-2 ring-1 ring-cream/8">
-                      <span className="absolute top-1/2 left-0 h-4 w-[3px] -translate-y-1/2 rounded-full bg-gold" />
-                    </motion.span>
-                  )}
-                  <Icon className={`relative size-4 transition-colors ${active ? "text-gold" : ""}`} aria-hidden />
-                  <span className="relative">{label}</span>
-                </NavLink>
-              );
-            })}
-          </nav>
-
-          <div className="mt-auto hidden border-t border-cream/10 p-3 md:block">
-            <div className="px-1 text-sm">
-              <div className="truncate font-medium">{me.name}</div>
-              <div className="truncate text-xs text-cream/50">{me.email}</div>
-            </div>
-            <InstallButton className="press mt-2 flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gold hover:bg-side-2 hover:text-champagne" />
-            <button onClick={signOut} className="press flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-cream/65 hover:bg-side-2 hover:text-cream">
-              <LogOut className="size-4" aria-hidden />
-              Sign out
-            </button>
-          </div>
-        </aside>
+        {/* phones: the logo and the bell; the pages are in the tab bar */}
+        <header className="on-navy sticky top-0 z-20 flex h-16 items-center justify-between gap-2 bg-side px-4 pt-[env(safe-area-inset-top)] text-cream print:hidden md:hidden">
+          <Mark />
+          <Bell />
+        </header>
+        <Rail
+          groups={groups}
+          section={section}
+          slim={slim}
+          onToggle={toggleSlim}
+          me={me}
+          mark={<Mark />}
+          install={(className) => <InstallButton className={className} />}
+          signOut={signOut}
+        />
 
         <main className="mx-auto w-full max-w-[90rem] min-w-0 px-4 py-6 print:p-0 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+5.5rem)] md:px-10 md:py-10">
           <div key={pathname} className="page-in">
@@ -117,7 +120,7 @@ export default function Shell() {
       </div>
 
       {/* Phone tab bar: the active tab grows into a pill and its label slides out */}
-      <nav aria-label="Main" className="fixed inset-x-0 bottom-0 z-30 print:hidden border-t border-cream/10 bg-side/95 pb-[env(safe-area-inset-bottom)] text-cream backdrop-blur md:hidden">
+      <nav aria-label="Main" className="on-navy fixed inset-x-0 bottom-0 z-30 print:hidden border-t border-cream/10 bg-side/95 pb-[env(safe-area-inset-bottom)] text-cream backdrop-blur md:hidden">
         <div className="flex h-16 items-center gap-1 px-2">
           {[...nav.filter((n) => n.tab), { to: "#more", label: "More", icon: Menu }].map(({ to, label, icon: Icon }) => {
             const isMore = to === "#more";
@@ -156,8 +159,8 @@ export default function Shell() {
         </div>
       </nav>
 
-      <QuickRing items={nav.filter((n) => n.quick)} />
-      <MoreSheet open={more} onClose={() => setMore(false)} items={nav.filter((n) => !n.tab)} />
+      <QuickRing items={nav.filter((n) => n.quick).sort((a, b) => a.quick - b.quick)} />
+      <MoreSheet open={more} onClose={() => setMore(false)} groups={groups.map((g) => ({ ...g, items: g.items.filter((n) => !n.tab) })).filter((g) => g.items.length)} />
       <Toaster />
       <Confirmer />
     </div>
@@ -165,12 +168,14 @@ export default function Shell() {
 }
 
 // Phones: a button by the right thumb, above the tab bar. Press and hold: the shortcuts fan out in
-// a ring around it; slide onto one and let go to open it. A quick tap opens the ring to tap instead.
+// a ring around it; slide onto one and let go to open it. A quick tap opens the ring to tap instead,
+// and another tap on the button puts it away.
 const RING = 150; // px from the button's centre to each shortcut's
 function QuickRing({ items }) {
   const [open, setOpen] = useState(false);
   const [hover, setHover] = useState(null); // the shortcut under the finger
   const press = useRef(null); // when the current press began
+  const wasOpen = useRef(false); // the ring was already out when this press began
   const navigate = useNavigate();
   const { pathname } = useLocation();
   useEffect(() => setOpen(false), [pathname]);
@@ -198,6 +203,7 @@ function QuickRing({ items }) {
   const down = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId); // keep getting the moves while the finger slides off
     press.current = Date.now();
+    wasOpen.current = open;
     if (!open) (setOpen(true), buzz());
   };
   const move = (e) => {
@@ -214,7 +220,7 @@ function QuickRing({ items }) {
     if (to) {
       setOpen(false);
       navigate(to);
-    } else if (!tap) setOpen(false); // held and let go on nothing: put it away
+    } else if (!tap || wasOpen.current) setOpen(false); // held and let go on nothing, or tapped while open: put it away
   };
   return (
     <div className="print:hidden md:hidden">
@@ -271,7 +277,7 @@ function QuickRing({ items }) {
   );
 }
 
-function MoreSheet({ open, onClose, items }) {
+function MoreSheet({ open, onClose, groups }) {
   const ref = useRef(null);
   const me = useMe();
   const { pathname } = useLocation();
@@ -282,14 +288,17 @@ function MoreSheet({ open, onClose, items }) {
   }, [open]);
   useEffect(onClose, [pathname]); // close after navigating
   return (
-    <dialog ref={ref} onClose={onClose} onClick={(e) => e.target === e.currentTarget && onClose()} className="sheet rounded-t-2xl border-t border-cream/10 bg-side p-0 text-cream md:hidden">
+    <dialog ref={ref} onClose={onClose} onClick={(e) => e.target === e.currentTarget && onClose()} className="on-navy sheet rounded-t-2xl border-t border-cream/10 bg-side p-0 text-cream md:hidden">
       <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-cream/20" aria-hidden />
       <div className="px-5 pt-4 pb-3 text-sm">
         <div className="truncate font-medium">{me.name}</div>
         <div className="truncate text-xs text-cream/50">{me.email}</div>
       </div>
-      <ul className="grid grid-cols-2 gap-2 px-4 pb-3">
-        {items.map(({ to, label, icon: Icon }) => (
+      {groups.map((g) => (
+      <section key={g.name} aria-label={g.name} className="px-4 pb-3">
+      <p className="label mb-1.5 px-1 text-[0.65rem] text-cream/40">{g.name}</p>
+      <ul className="grid grid-cols-2 gap-2">
+        {g.items.map(({ to, label, icon: Icon }) => (
           <li key={to}>
             <NavLink to={to} className={({ isActive }) => `press flex items-center gap-3 rounded-xl px-4 py-3.5 text-sm font-medium ${isActive ? "bg-side-2 text-cream" : "bg-side-2/50 text-cream/75"}`}>
               {({ isActive }) => (
@@ -301,6 +310,8 @@ function MoreSheet({ open, onClose, items }) {
           </li>
         ))}
       </ul>
+      </section>
+      ))}
       <InstallButton className="press mx-4 mb-2 flex w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-xl bg-gold/15 px-4 py-3 text-sm font-medium text-champagne" />
       <button onClick={signOut} className="press mx-4 mb-4 flex w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm text-cream/65 ring-1 ring-cream/10 hover:text-cream">
         <LogOut className="size-4" aria-hidden /> Sign out

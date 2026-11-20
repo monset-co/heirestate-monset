@@ -51,8 +51,7 @@
     outline: 2px solid var(--color-navy);
     outline-offset: 2px;
   }
-  nav[aria-label="Main"] :focus-visible,
-  aside > div:first-child > :focus-visible {
+  .on-navy :focus-visible {
     outline-color: var(--color-gold);
   }
   ::selection {
