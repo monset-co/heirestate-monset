@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sign, unsign, fields, manilaDays } from "./google.js";
+import { sign, unsign, fields, manilaDays, dueReminders } from "./google.js";
 
 test("OAuth state: signed, expiring, tamper-proof", async () => {
   const s = await sign("k", "agent@example.com", 0);
@@ -37,4 +37,19 @@ test("a booking's fields, as Google keeps them", () => {
   assert.deepEqual(fields({ ...base, reminders: [{ method: "email", minutes: 1440 }] }).event.reminders, { useDefault: false, overrides: [{ method: "email", minutes: 1440 }] });
   assert.deepEqual(fields({ ...base, reminders: [] }).event.reminders, { useDefault: false, overrides: [] }, "none at all");
   assert.ok(fields({ ...base, reminders: [{ method: "sms", minutes: 10 }] }).error);
+});
+
+test("a booking's notification reminders, each due in one 15-minute window", () => {
+  const at = Date.parse("2026-11-20T10:00:00+08:00");
+  const ev = (start, reminders) => ({ id: start, start: { dateTime: start }, reminders });
+  const items = [
+    ev("2026-11-20T10:30:00+08:00", { useDefault: false, overrides: [{ method: "popup", minutes: 30 }, { method: "email", minutes: 30 }] }),
+    ev("2026-11-20T10:40:00+08:00", { useDefault: false, overrides: [{ method: "popup", minutes: 30 }] }), // due at 10:10, next window
+    ev("2026-11-20T10:50:00+08:00", { useDefault: true }), // the calendar's default: 60 → 9:50, in this window
+    { ...ev("2026-11-20T10:30:00+08:00", { useDefault: false, overrides: [{ method: "popup", minutes: 30 }] }), status: "cancelled" },
+    { id: "allday", start: { date: "2026-11-21" }, reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 840 }] } }, // 10:00 the day before
+  ];
+  const due = dueReminders(items, [{ method: "popup", minutes: 60 }], at - 15 * 60e3, at);
+  assert.deepEqual(due.map((d) => [d.event.id, d.minutes]), [["2026-11-20T10:30:00+08:00", 30], ["2026-11-20T10:50:00+08:00", 60], ["allday", 840]]);
+  assert.equal(dueReminders(items, [], at, at + 15 * 60e3).length, 1, "the next window has the 10:40 one only");
 });

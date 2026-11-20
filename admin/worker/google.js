@@ -13,6 +13,7 @@
 // Email (read-only) is gmail.js, on the same connection.
 // Needs GOOGLE_CLIENT_ID (var) and GOOGLE_CLIENT_SECRET (secret).
 import { db } from "./supabase.js";
+import { notify } from "./push.js";
 
 // Calendar to book; Gmail read-only for the Email page (gmail.js). Gmail is optional at consent.
 const SCOPES = "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly";
@@ -211,7 +212,8 @@ export async function book(req, env, me) {
   f.event.description = [f.event.description, lead && `Lead: ${env.ADMIN_URL}/leads/${lead}`, `Booked by ${me.admin.name ?? me.email} in the Heir Estates admin`].filter(Boolean).join("\n\n");
   const e = await google(env, `?sendUpdates=${f.guests.length ? "all" : "none"}`, {
     method: "POST",
-    body: JSON.stringify({ ...f.event, extendedProperties: lead ? { private: { lead_id: String(lead) } } : undefined}),
+    // who booked it, so its reminders reach them (pushReminders)
+    body: JSON.stringify({ ...f.event, extendedProperties: { private: { booked_by: me.email.toLowerCase(), ...(lead ? { lead_id: String(lead) } : {}) } } }),
   });
   return json({ id: e.id, link: e.htmlLink });
 }
@@ -238,4 +240,51 @@ export async function cancel(req, env) {
   if (!ID.test(id ?? "")) return json({ error: "No such booking" }, 400);
   await google(env, `/${id}?sendUpdates=all`, { method: "DELETE" });
   return json({ ok: true });
+}
+
+// A booking's notification reminders ("popup": its own, or the calendar's defaults) that fall due
+// in (from, to], as { event, minutes }. An all-day booking counts from midnight, Manila time.
+export function dueReminders(items, defaults, from, to) {
+  const out = [];
+  for (const e of items) {
+    if (e.status === "cancelled") continue;
+    const start = e.start?.dateTime ? Date.parse(e.start.dateTime) : Date.parse(`${e.start?.date}T00:00:00+08:00`);
+    const list = e.reminders?.useDefault === false ? (e.reminders.overrides ?? []) : defaults;
+    for (const r of list ?? []) if (r.method === "popup" && start - r.minutes * 60e3 > from && start - r.minutes * 60e3 <= to) out.push({ event: e, minutes: r.minutes });
+  }
+  return out;
+}
+
+const before = (m) => (m === 0 ? "Starting now" : m < 60 ? `In ${m} minutes` : m < 1440 ? `In ${m / 60 === 1 ? "an hour" : `${Math.round(m / 6) / 10} hours`}` : m === 1440 ? "Tomorrow" : `In ${Math.round(m / 1440)} days`);
+
+// Every 15 minutes (index.js scheduled): the bookings' notification reminders, pushed to the agents
+// they're for: whoever booked it, the lead's agent, and team members invited to it; a booking with
+// none of those (made in Google itself) goes to everyone. The window is the 15 minutes up to this
+// run, so each reminder goes once.
+// ponytail: a run Cloudflare skips loses its reminders; keep a sent-log table if that ever matters
+export async function pushReminders(env, at = Date.now()) {
+  if (!env.GOOGLE_CLIENT_ID) return;
+  const [account] = await db(env).get("google_account?select=email");
+  if (!account) return;
+  const from = at - 15 * 60e3;
+  // reminders up to 8 days ahead: the longest the booking form offers is a week
+  const p = new URLSearchParams({ timeMin: new Date(from).toISOString(), timeMax: new Date(at + 8 * 864e5).toISOString(), singleEvents: "true", maxResults: "250", timeZone: TZ });
+  const out = await google(env, `?${p}`);
+  const due = dueReminders(out.items ?? [], out.defaultReminders ?? [], from, at);
+  if (!due.length) return;
+  const team = (await db(env).get("admin_users?select=id,email&active=eq.true")).map((a) => a.email);
+  for (const { event: e, minutes } of due) {
+    const priv = e.extendedProperties?.private ?? {};
+    const to = new Set([priv.booked_by, ...(e.attendees ?? []).map((a) => a.email?.toLowerCase())].filter((x) => team.includes(x)));
+    if (Number(priv.lead_id)) {
+      const [lead] = await db(env).get(`leads?select=agent:admin_users(email)&id=eq.${Number(priv.lead_id)}`);
+      if (lead?.agent?.email) to.add(lead.agent.email);
+    }
+    const when = e.start.dateTime ? new Date(e.start.dateTime).toLocaleTimeString("en-PH", { timeZone: TZ, hour: "numeric", minute: "2-digit" }) : "All day";
+    await notify(env, to.size ? [...to] : null, {
+      title: `${before(minutes)}: ${e.summary ?? "a booking"}`,
+      body: [when, e.location].filter(Boolean).join(" · "),
+      url: "/calendar",
+    });
+  }
 }

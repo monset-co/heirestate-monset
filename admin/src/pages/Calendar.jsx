@@ -807,12 +807,12 @@ function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
   );
 }
 
-// when Google reminds the connected account: a notification (the Google Calendar app, on phone and
-// computer) or an email, up to five. null: whatever the calendar's own default is.
+// when Google reminds the connected account, a notification or an email, up to five (null: the
+// calendar's own default); the notifications are also pushed to the agents (worker pushReminders)
 function Reminders({ value, onChange }) {
   const set = (i, k) => (e) => onChange(value.map((r, j) => (j === i ? { ...r, [k]: k === "minutes" ? Number(e.target.value) : e.target.value } : r)));
   return (
-    <Field label="Reminders" hint="Google sends these to the connected account, as a notification in the Google Calendar app and by email. Guests get reminders from their own calendar.">
+    <Field label="Reminders" hint="A notification reminder also reaches the agents on their phones and computers: whoever booked it, the lead's agent and any team member invited. Email reminders go to the business Gmail. Clients get reminders from their own calendar.">
       {value === null ? (
         <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
           The calendar's default reminders.
