@@ -3,9 +3,9 @@
 // nearest (or the one with keyboard focus) and carries its name: Motionbook's Liquid Bulge (T2)
 // turned on its side. The bulge is the rail's own navy, merged into it by an SVG goo filter; its
 // text sits on an unfiltered copy so it stays crisp.
-import { ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
+import { ChevronDown, ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
 import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import Bell from "./Bell";
 import { spring } from "./motion";
@@ -37,6 +37,20 @@ export function useSlim() {
 export default function Rail({ groups, section, slim, onToggle, me, mark, install, signOut }) {
   const aside = useRef(null);
   const links = useRef({});
+  // the nav scrolls on short screens with no scrollbar; its edges fade where there's more, and a
+  // small chevron at the foot says (and takes you to) what's below
+  const list = useRef(null);
+  const [edge, setEdge] = useState({ up: false, down: false });
+  useEffect(() => {
+    const el = list.current;
+    const check = () => setEdge({ up: el.scrollTop > 2, down: el.scrollTop + el.clientHeight < el.scrollHeight - 2 });
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    el.addEventListener("scroll", check, { passive: true });
+    return () => (ro.disconnect(), el.removeEventListener("scroll", check));
+  }, [slim]);
+  const fade = `linear-gradient(to bottom, transparent 0, #000 ${edge.up ? 28 : 0}px, #000 calc(100% - ${edge.down ? 36 : 0}px), transparent 100%)`;
   const [near, setNear] = useState(null); // { to, label, y } the bulge is out for
 
   // the item nearest the pointer, by its centre, if near enough
@@ -74,7 +88,14 @@ export default function Rail({ groups, section, slim, onToggle, me, mark, instal
         {!slim && <Bell />}
       </div>
 
-      <nav aria-label="Main" className={`relative z-[1] mt-1 flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pb-3 ${slim ? "items-center px-2" : "px-3"}`}>
+      <div className="relative z-[1] mt-1 flex min-h-0 flex-1 flex-col">
+      <nav
+        ref={list}
+        aria-label="Main"
+        onScroll={() => slim && setNear(null)}
+        style={{ maskImage: fade, WebkitMaskImage: fade }}
+        className={`flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${slim ? "items-center px-2" : "px-3"}`}
+      >
         {groups.map((g, gi) => (
           <div key={g.name ?? gi} className={gi ? "mt-4" : ""} role="group" aria-label={g.name ?? "Overview"}>
             {g.name &&
@@ -112,6 +133,16 @@ export default function Rail({ groups, section, slim, onToggle, me, mark, instal
           </div>
         ))}
       </nav>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        onClick={() => list.current.scrollBy({ top: list.current.clientHeight * 0.7, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })}
+        className={`absolute bottom-1 left-1/2 grid size-6 -translate-x-1/2 place-items-center rounded-full bg-side-2 text-cream/60 ring-1 ring-cream/10 transition-[opacity,transform] duration-200 ease-[var(--ease-out)] hover:text-cream ${edge.down ? "opacity-100" : "pointer-events-none translate-y-1 opacity-0"}`}
+      >
+        <ChevronDown className="size-3.5" />
+      </button>
+      </div>
 
       <div className={`relative z-[1] shrink-0 border-t border-cream/10 ${slim ? "flex flex-col items-center gap-1 py-3" : "p-3"}`}>
         {slim ? (
