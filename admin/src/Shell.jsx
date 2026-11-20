@@ -181,7 +181,19 @@ function QuickRing({ items }) {
     return () => removeEventListener("keydown", esc);
   }, [open]);
   const buzz = () => navigator.vibrate?.(8);
-  const under = (e) => document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-to]")?.dataset.to ?? null;
+  const last = items.length - 1;
+  const angleOf = (i) => Math.PI - (i / last) * (Math.PI / 2); // from straight left round to straight up
+  // the shortcut the finger points at: past a small dead zone round the button, whichever lies
+  // nearest the direction of the slide, so the finger needn't reach the icon itself
+  const aim = (e) => {
+    const b = e.currentTarget.getBoundingClientRect();
+    const dx = e.clientX - (b.left + b.width / 2);
+    const dy = (b.top + b.height / 2) - e.clientY;
+    if (Math.hypot(dx, dy) < 30) return null;
+    const a = Math.atan2(dy, dx);
+    const best = items.map((it, i) => [it.to, Math.abs(Math.atan2(Math.sin(a - angleOf(i)), Math.cos(a - angleOf(i))))]).sort((x, y) => x[1] - y[1])[0];
+    return best[1] < Math.PI / 4 ? best[0] : null; // pointing well away from the fan (down, right): nothing
+  };
 
   const down = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId); // keep getting the moves while the finger slides off
@@ -190,12 +202,12 @@ function QuickRing({ items }) {
   };
   const move = (e) => {
     if (!press.current) return;
-    const to = under(e);
+    const to = aim(e);
     if (to !== hover) (setHover(to), to && buzz());
   };
   const up = (e) => {
     if (!press.current) return;
-    const to = under(e);
+    const to = aim(e);
     const tap = Date.now() - press.current < 300;
     press.current = null;
     setHover(null);
@@ -204,8 +216,6 @@ function QuickRing({ items }) {
       navigate(to);
     } else if (!tap) setOpen(false); // held and let go on nothing: put it away
   };
-  const last = items.length - 1;
-
   return (
     <div className="print:hidden md:hidden">
       <AnimatePresence>
@@ -216,7 +226,7 @@ function QuickRing({ items }) {
           {open && (
             <motion.ul key="ring" id="quick-ring" exit={{ opacity: 0, transition: { duration: 0.12 } }}>
               {items.map(({ to, label, icon: Icon }, i) => {
-                const a = Math.PI - (i / last) * (Math.PI / 2); // from straight left round to straight up
+                const a = angleOf(i);
                 const lit = hover === to;
                 return (
                   <motion.li
