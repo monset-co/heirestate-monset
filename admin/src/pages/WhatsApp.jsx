@@ -30,7 +30,7 @@ export default function WhatsApp() {
     run(supabase.from("wa_threads").select(THREAD).order("last_message_at", { ascending: false, nullsFirst: false }).limit(300)).then(setThreads, (e) => setError(e.message));
     // a changed chat is fetched again, for its lead's name
     const ch = supabase
-      .channel("wa-threads")
+      .channel(`wa-threads-${crypto.randomUUID()}`) // its own name: see Bell.jsx
       .on("postgres_changes", { event: "*", schema: "public", table: "wa_threads" }, async ({ eventType, new: n, old }) => {
         if (eventType === "DELETE") return setThreads((l) => l?.filter((t) => t.id !== old.id));
         const row = await run(supabase.from("wa_threads").select(THREAD).eq("id", n.id).maybeSingle()).catch(() => null);
@@ -90,7 +90,7 @@ export function Chat({ thread, onChange }) {
   useEffect(() => {
     run(supabase.from("wa_messages").select(MSG).eq("thread_id", thread.id).order("created_at").limit(500)).then(setMsgs, (e) => setError(e.message));
     const ch = supabase
-      .channel(`wa-messages-${thread.id}`)
+      .channel(`wa-messages-${thread.id}-${crypto.randomUUID()}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "wa_messages", filter: `thread_id=eq.${thread.id}` }, ({ new: n }) =>
         setMsgs((l) => l && merge(l, n).sort((a, b) => a.created_at.localeCompare(b.created_at)))
       )

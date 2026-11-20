@@ -21,8 +21,10 @@ export default function Bell() {
 
   useEffect(() => {
     run(supabase.from("notifications").select(COLS).order("created_at", { ascending: false }).limit(30)).then(setList, () => {});
+    // a channel of its own: Supabase hands back an open channel of the same name, and adding to one
+    // that's subscribed throws (two bells on screen, or one remounting before the last has closed)
     const ch = supabase
-      .channel("bell")
+      .channel(`bell-${crypto.randomUUID()}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `email=eq.${me.email}` }, ({ new: n }) => setList((l) => [n, ...l].slice(0, 30)))
       .subscribe();
     return () => supabase.removeChannel(ch);
