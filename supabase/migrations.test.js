@@ -9,7 +9,7 @@ test("row-level security, publishing rules, the activity log and the sign-up gat
 
 const db = new PGlite();
 await db.exec(`
-  create role anon nologin; create role authenticated nologin; create role supabase_auth_admin nologin;
+  create role anon nologin; create role authenticated nologin; create role supabase_auth_admin nologin; create role service_role nologin;
   grant usage on schema public to anon, authenticated;
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on sequences to anon, authenticated;
@@ -227,9 +227,10 @@ await fails(() => admin("insert into tasks (body, private, assignee) values ('x'
 assert.equal((await stranger("select count(*)::int n from tasks"))[0].n, 0);
 
 // push: each admin's devices are their own
-await agent("insert into push_subscriptions (endpoint, p256dh, auth) values ('https://push.example/agent', 'k', 'a')");
+await agent("insert into push_subscriptions (endpoint, p256dh, auth) values ('https://fcm.googleapis.com/fcm/send/agent', 'k', 'a')");
 assert.equal((await admin("select count(*)::int n from push_subscriptions"))[0].n, 0, "nobody sees another's devices");
-await fails(() => admin("insert into push_subscriptions (endpoint, email, p256dh, auth) values ('https://push.example/x', 'agent@example.com', 'k', 'a')"), /row-level security/);
+await fails(() => admin("insert into push_subscriptions (endpoint, email, p256dh, auth) values ('https://fcm.googleapis.com/fcm/send/x', 'agent@example.com', 'k', 'a')"), /row-level security/);
+await fails(() => agent("insert into push_subscriptions (endpoint, p256dh, auth) values ('https://evil.example/x', 'k', 'a')"), /push_service/);
 
 // documents and presentations: the team's, on one of the two shelves
 await admin("insert into library_files (shelf, file_path, file_name) values ('presentations', 'presentations/x-deck.pdf', 'deck.pdf')");
