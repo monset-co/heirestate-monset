@@ -221,8 +221,8 @@ export default function Inventory() {
             <thead className="border-b border-line">
               <tr>
                 <th className={th}>Property</th>
-                {q.near && <th className={`${th} text-right`}>Distance</th>}
-                <th className={`${th} text-right`}>Price</th>
+                {q.near && <th className={`${th} hidden text-right sm:table-cell`}>Distance</th>}
+                <th className={`${th} hidden text-right sm:table-cell`}>Price</th>
                 <th className={`${th} hidden md:table-cell`}>Furnishing</th>
                 <th className={th}>Status</th>
               </tr>
@@ -230,17 +230,23 @@ export default function Inventory() {
             <tbody className="divide-y divide-line">
               {shown.slice(0, limit).map((r) => (
                 <tr key={r.id} onClick={() => show(r)} className="group cursor-pointer transition-colors hover:bg-bg active:bg-sunken">
+                  {/* phones: the whole name and place, wrapped, with the price (and distance) beneath; from
+                      tablets up they're one line each, with price and distance in their own columns */}
                   <td className="w-full max-w-0 px-4 py-3">
-                    <button type="button" onClick={() => show(r)} className="block max-w-full truncate text-left font-medium text-fg outline-offset-4 group-hover:text-accent-ink">
+                    <button type="button" onClick={() => show(r)} className="block max-w-full text-left font-medium text-fg outline-offset-4 group-hover:text-accent-ink sm:truncate">
                       {r.type || "Property"}
                     </button>
-                    <p className="truncate text-xs text-muted">{[r.location, r.source].filter(Boolean).join(" · ")}</p>
+                    <p className="text-xs text-muted sm:truncate">{[r.location, r.source].filter(Boolean).join(" · ")}</p>
+                    <p className="mt-1 flex flex-wrap gap-x-2 text-sm font-medium text-fg tabular-nums sm:hidden">
+                      {priceOf(r)}
+                      {q.near && distance(r, q.near) != null && <span className="font-normal text-muted">{distance(r, q.near).toFixed(1)} km{r.geo === "approx" && " ≈"}</span>}
+                    </p>
                   </td>
-                  {q.near && <td className="px-4 py-3 text-right whitespace-nowrap text-muted tabular-nums">{distance(r, q.near).toFixed(1)} km{r.geo === "approx" && <span title="Only the neighbourhood is known"> ≈</span>}</td>}
-                  <td className="max-w-48 truncate px-4 py-3 text-right tabular-nums whitespace-nowrap" title={r.price_note ?? undefined}>{priceOf(r)}</td>
+                  {q.near && <td className="hidden px-4 py-3 text-right whitespace-nowrap text-muted tabular-nums sm:table-cell">{distance(r, q.near).toFixed(1)} km{r.geo === "approx" && <span title="Only the neighbourhood is known"> ≈</span>}</td>}
+                  <td className="hidden max-w-48 truncate px-4 py-3 text-right tabular-nums whitespace-nowrap sm:table-cell" title={r.price_note ?? undefined}>{priceOf(r)}</td>
                   <td className="hidden px-4 py-3 whitespace-nowrap md:table-cell">{r.furnishing ? <Chip tone="emerald">{r.furnishing}</Chip> : <span className="text-muted">—</span>}</td>
-                  <td className="px-4 py-3">
-                    <span className="flex flex-wrap gap-1">
+                  <td className="py-3 pr-4 align-top sm:px-4 sm:align-middle">
+                    <span className="flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:items-center">
                       {r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>)}
                       {r.available_from && <Badge value="draft">From {date(r.available_from)}</Badge>}
                       {r.pet_friendly === "yes" && <Badge value="draft">Pets OK</Badge>}
