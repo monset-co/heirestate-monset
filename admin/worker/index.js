@@ -247,6 +247,7 @@ export default {
           if (route === "POST disconnect") return await google.disconnect(env);
           if (route === "GET events") return await google.events(env, url);
           if (route === "POST book") return await google.book(req, env, me);
+          if (route === "POST update") return await google.update(req, env);
           if (route === "POST cancel") return await google.cancel(req, env);
           if (route === "GET mail") return await gmail.list(env, url);
           const m = route.match(/^GET mail\/([^/]+)(?:\/att\/([^/]+))?$/);

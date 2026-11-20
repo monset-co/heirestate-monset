@@ -1,15 +1,18 @@
 // Bookings on the business's Google Calendar (admin/worker/google.js), laid out as Google lays
-// them out: a month grid, a week of hours, or a list. Connect the account once; click a day or an
-// hour to book it, a booking to see or cancel it. The guest gets Google's own invitation from the
-// connected Gmail. Opened from a lead (?lead=id), the booking is filled in from them.
-import { CalendarPlus, ChevronLeft, ChevronRight, ExternalLink, MapPin, Users } from "lucide-react";
+// them out: a month grid, a week of hours, or a list. Connect the account once. Click a day to open
+// its half-hour slots in a side panel; click a slot (or an hour in the week) to book it, a booking
+// to see, edit or cancel it, and drag a booking to another slot or day to move it. Everything is
+// Google's own event: edits, colours and all-day bookings show the same in Google Calendar, and
+// guests get Google's invitations and updates from the connected Gmail. Opened from a lead
+// (?lead=id), the booking is filled in from them.
+import { Bell, CalendarPlus, ChevronLeft, ChevronRight, ExternalLink, MapPin, Pencil, Plus, Repeat, Users, X } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
 import { supabase, run } from "../supabase";
 import { Skeleton, spring, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, btn, btnDanger, btnGhost, card, input, Select, ask } from "../ui";
+import { Badge, Drawer, Empty, ErrorNote, Field, Modal, PageHeader, btn, btnDanger, btnGhost, card, input, Select, ask } from "../ui";
 
 const TZ = "Asia/Manila";
 const fmt = (o) => new Intl.DateTimeFormat("en-PH", { timeZone: TZ, ...o });
@@ -17,6 +20,7 @@ const time = (iso) => fmt({ hour: "numeric", minute: "2-digit" }).format(new Dat
 // Manila calendar days as "YYYY-MM-DD" keys, counted in UTC so no device clock shifts them
 const keyOf = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
 const addDays = (key, n) => new Date(Date.parse(`${key}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
+const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5);
 const weekday = (key) => new Date(`${key}T00:00:00Z`).getUTCDay();
 const label = (key, o) => new Date(`${key}T00:00:00Z`).toLocaleDateString("en-PH", { timeZone: "UTC", ...o });
 // an event's Manila day and minute of the day
@@ -27,14 +31,28 @@ function at(iso, allDay) {
       .formatToParts(new Date(iso))
       .map((x) => [x.type, x.value])
   );
-  return { key: `${p.year}-${p.month}-${p.day}`, min: Number(p.hour) * 60 + Number(p.minute) };
+  return { key: `${p.year}-${p.month}-${p.day}`, min: (Number(p.hour) % 24) * 60 + Number(p.minute) };
 }
+// the form's Manila wall-clock times, "2026-11-20T14:30"
+const pad = (n) => String(n).padStart(2, "0");
+const slot = (key, min) => `${key}T${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
+const local = (iso) => slot(at(iso).key, at(iso).min);
+const minutesBetween = (a, b) => (Date.parse(`${b}:00Z`) - Date.parse(`${a}:00Z`)) / 60e3;
+const shift = (t, m) => new Date(Date.parse(`${t}:00Z`) + m * 60e3).toISOString().slice(0, 16);
+const clock = (min) => `${Math.floor(min / 60) % 12 || 12}:${pad(min % 60)} ${min % 1440 < 720 ? "AM" : "PM"}`;
+const hourName = (h) => `${h % 12 || 12} ${h % 24 < 12 ? "AM" : "PM"}`;
 
 const VIEWS = { month: "Month", week: "Week", list: "List" };
-const HOURS = [7, 21]; // the week view's working day, 7am to 9pm
+const HOURS = [7, 21]; // the working day shown, 7am to 9pm, stretched to fit anything outside it
 const HOUR_PX = 48;
-// what a booking's colour says (the legend repeats it)
+// Google Calendar's own event colours (colorId 1–11), so a colour set here shows the same there
+const GCOLOR = {
+  1: ["Lavender", "#7986cb"], 2: ["Sage", "#33b679"], 3: ["Grape", "#8e24aa"], 4: ["Flamingo", "#e67c73"], 5: ["Banana", "#f6bf26"], 6: ["Tangerine", "#f4511e"],
+  7: ["Peacock", "#039be5"], 8: ["Graphite", "#616161"], 9: ["Blueberry", "#3f51b5"], 10: ["Basil", "#0b8043"], 11: ["Tomato", "#d50000"],
+};
+// what a booking's colour says (the legend repeats it); a colour picked in Google wins
 const toneOf = (ev) => (ev.allDay ? "bg-gold/25 text-gold-ink border-gold" : ev.lead_id ? "bg-navy text-cream border-navy" : "bg-sky-600/12 text-sky-900 border-sky-600");
+const look = (ev) => (GCOLOR[ev.color] ? { className: "text-fg", style: { background: `${GCOLOR[ev.color][1]}2e`, borderColor: GCOLOR[ev.color][1] } } : { className: toneOf(ev), style: {} });
 
 // the Manila days a view shows: a month's six weeks from a Sunday, a week, or 60 days
 function range(view, cursor) {
@@ -69,6 +87,8 @@ export default function Calendar() {
   const [error, setError] = useState("");
   const [booking, setBooking] = useState(null); // the form's values while it's open
   const [seeing, setSeeing] = useState(null); // the booking open in its card
+  const [day, setDay] = useState(null); // the day open in the side panel
+  const [dayEvents, setDayEvents] = useState(null); // its bookings, when it's outside the view's window
   const [from, to] = range(view, cursor);
 
   const load = () => api(`google/events?from=${from}&to=${to}`).then((r) => setEvents(r.events), (e) => setError(e.message));
@@ -76,6 +96,15 @@ export default function Calendar() {
     if (google?.email) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [google?.email, from, to]);
+
+  // the side panel's day, fetched on its own when the view doesn't hold it
+  const inView = day && day >= from && day <= to;
+  const loadDay = () => (day && !inView ? api(`google/events?from=${day}&to=${day}`).then((r) => setDayEvents(r.events), (e) => setError(e.message)) : setDayEvents(null));
+  useEffect(() => {
+    loadDay();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [day, inView]);
+  const refresh = () => (load(), loadDay());
 
   useEffect(() => {
     const back = RETURNS[params.get("google")];
@@ -93,7 +122,7 @@ export default function Calendar() {
           setBooking({
             ...blank(),
             title: `Viewing: ${l.name}${l.listing ? `, ${l.listing.title}` : ""}`,
-            guest: l.email ?? "",
+            guests: l.email ?? "",
             notes: l.viewing_time ? `They asked for: ${l.viewing_time}` : "",
             lead_id: l.id,
             lead_name: l.name,
@@ -129,8 +158,34 @@ export default function Calendar() {
     try {
       await api("google/cancel", { id: ev.id });
       setEvents((all) => all.filter((x) => x.id !== ev.id));
+      setDayEvents((all) => all?.filter((x) => x.id !== ev.id) ?? null);
       setSeeing(null);
       toast("Booking cancelled");
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  // a booking dragged onto another day (min: null keeps its time) or another slot; it keeps its length
+  async function move(id, key, min) {
+    const ev = [...(events ?? []), ...(dayEvents ?? [])].find((x) => x.id === id);
+    if (!ev?.editable) return;
+    const f = formOf(ev);
+    if (f.allDay) {
+      const days = daysBetween(f.start, f.end);
+      f.start = key;
+      f.end = addDays(key, days);
+    } else {
+      const len = minutesBetween(f.start, f.end);
+      f.start = slot(key, min ?? at(ev.start).min);
+      f.end = shift(f.start, len);
+    }
+    if (f.start === formOf(ev).start) return;
+    if (ev.guests.length && !(await ask({ title: `Move “${ev.title}”?`, body: "Google emails the guests the new time.", yes: "Move it" }))) return;
+    try {
+      await api("google/update", f);
+      toast("Moved");
+      refresh();
     } catch (e) {
       setError(e.message);
     }
@@ -139,12 +194,12 @@ export default function Calendar() {
   // each day's bookings, in order
   const byDay = useMemo(() => {
     const m = new Map();
-    for (const ev of events ?? []) {
+    for (const ev of [...(events ?? []), ...(dayEvents ?? [])]) {
       const { key } = at(ev.start, ev.allDay);
-      m.set(key, [...(m.get(key) ?? []), ev]);
+      if (!(m.get(key) ?? []).some((x) => x.id === ev.id)) m.set(key, [...(m.get(key) ?? []), ev]);
     }
     return m;
-  }, [events]);
+  }, [events, dayEvents]);
 
   // back or forward a month, a week, or 60 days
   const step = (n) =>
@@ -153,7 +208,8 @@ export default function Calendar() {
     view === "month"
       ? label(cursor, { month: "long", year: "numeric" })
       : `${label(from, { month: "short", day: "numeric" })} – ${label(to, { month: "short", day: "numeric", year: "numeric" })}`;
-  const bookAt = (key, hour = 10) => setBooking(blank(key, hour));
+  const bookAt = (key, min = 600) => setBooking(blank(key, min));
+  const arrow = "press rounded-md p-2 text-muted hover:bg-sunken hover:text-fg";
 
   return (
     <>
@@ -187,10 +243,10 @@ export default function Calendar() {
             <div className="flex flex-wrap items-center gap-2">
               <button className={btnGhost} onClick={() => setCursor(today)}>Today</button>
               <span className="flex">
-                <button className="press rounded-md p-2 text-muted hover:bg-sunken hover:text-fg" onClick={() => step(-1)} aria-label="Earlier">
+                <button className={arrow} onClick={() => step(-1)} aria-label="Earlier">
                   <ChevronLeft className="size-5" aria-hidden />
                 </button>
-                <button className="press rounded-md p-2 text-muted hover:bg-sunken hover:text-fg" onClick={() => step(1)} aria-label="Later">
+                <button className={arrow} onClick={() => step(1)} aria-label="Later">
                   <ChevronRight className="size-5" aria-hidden />
                 </button>
               </span>
@@ -216,16 +272,17 @@ export default function Calendar() {
               <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm border border-sky-600 bg-sky-600/12" /> Other bookings</span>
               <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-gold/60" /> All day</span>
               <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-gold" /> Today</span>
+              <span className="hidden md:inline">Click a day for its time slots. Drag a booking to move it.</span>
             </p>
 
             {events === null ? (
               <Skeleton className="h-96 w-full" />
             ) : view === "month" ? (
-              <Month from={from} cursor={cursor} today={today} byDay={byDay} onDay={bookAt} onEvent={setSeeing} onMore={(key) => (setCursor(key), setView("week"))} />
+              <Month from={from} cursor={cursor} today={today} byDay={byDay} onDay={setDay} onEvent={setSeeing} onMove={move} />
             ) : view === "week" ? (
-              <Week from={from} today={today} byDay={byDay} onHour={bookAt} onEvent={setSeeing} />
+              <Week from={from} today={today} byDay={byDay} onDay={setDay} onSlot={bookAt} onEvent={setSeeing} onMove={move} />
             ) : (
-              <List from={from} byDay={byDay} onEvent={setSeeing} />
+              <List from={from} byDay={byDay} onDay={setDay} onEvent={setSeeing} />
             )}
 
             <p className="text-sm text-muted">
@@ -236,11 +293,40 @@ export default function Calendar() {
         )}
       </div>
 
+      <Drawer
+        open={!!day}
+        onClose={() => setDay(null)}
+        title={day ? label(day, { weekday: "long", month: "long", day: "numeric" }) : ""}
+        head={
+          day && (
+            <span className="flex">
+              <button className={arrow} onClick={() => setDay(addDays(day, -1))} aria-label="The day before">
+                <ChevronLeft className="size-5" aria-hidden />
+              </button>
+              <button className={arrow} onClick={() => setDay(addDays(day, 1))} aria-label="The day after">
+                <ChevronRight className="size-5" aria-hidden />
+              </button>
+            </span>
+          )
+        }
+      >
+        {day && (!inView && !dayEvents ? <Skeleton className="m-5 h-96" /> : <DayPanel day={day} today={today} evs={byDay.get(day) ?? []} onSlot={bookAt} onEvent={setSeeing} onMove={move} />)}
+      </Drawer>
+
       <Modal open={!!seeing} onClose={() => setSeeing(null)} title={seeing?.title ?? ""}>
-        {seeing && <Booking ev={seeing} onCancel={() => cancel(seeing)} />}
+        {seeing && (
+          <Booking
+            ev={seeing}
+            onCancel={() => cancel(seeing)}
+            onEdit={() => {
+              setBooking(formOf(seeing));
+              setSeeing(null);
+            }}
+          />
+        )}
       </Modal>
 
-      <Modal open={!!booking} onClose={() => setBooking(null)} title="New booking">
+      <Modal open={!!booking} onClose={() => setBooking(null)} title={booking?.id ? "Edit booking" : "New booking"}>
         {booking && (
           <BookingForm
             value={booking}
@@ -248,7 +334,7 @@ export default function Calendar() {
             disabled={!google?.email}
             onDone={() => {
               setBooking(null);
-              load();
+              refresh();
             }}
           />
         )}
@@ -257,8 +343,22 @@ export default function Calendar() {
   );
 }
 
+// drag and drop: a booking carries its id; a day or a slot takes it
+const dragFrom = (ev) =>
+  ev.editable ? { draggable: true, onDragStart: (e) => (e.dataTransfer.setData("text/x-booking", ev.id), (e.dataTransfer.effectAllowed = "move")) } : {};
+const dropOn = (onDrop) => ({
+  onDragOver: (e) => e.dataTransfer.types.includes("text/x-booking") && (e.preventDefault(), e.currentTarget.setAttribute("data-over", "")),
+  onDragLeave: (e) => e.currentTarget.removeAttribute("data-over"),
+  onDrop: (e) => {
+    e.preventDefault();
+    e.currentTarget.removeAttribute("data-over");
+    const id = e.dataTransfer.getData("text/x-booking");
+    if (id) onDrop(id);
+  },
+});
+
 // six weeks from the Sunday on or before the 1st; days outside the month are dimmed
-function Month({ from, cursor, today, byDay, onDay, onEvent, onMore }) {
+function Month({ from, cursor, today, byDay, onDay, onEvent, onMove }) {
   const days = Array.from({ length: 42 }, (_, i) => addDays(from, i));
   return (
     <div className={`${card} overflow-hidden`}>
@@ -275,12 +375,13 @@ function Month({ from, cursor, today, byDay, onDay, onEvent, onMore }) {
             <div
               key={d}
               onClick={(e) => e.target === e.currentTarget && onDay(d)}
-              className={`relative min-h-24 cursor-pointer border-line p-1 transition-colors hover:bg-bg sm:min-h-28 ${i % 7 ? "border-l" : ""} ${i >= 7 ? "border-t" : ""} ${inMonth ? "" : "bg-sunken/40"}`}
+              {...dropOn((id) => onMove(id, d, null))}
+              className={`relative min-h-24 min-w-0 cursor-pointer border-line p-1 transition-colors hover:bg-bg data-over:bg-gold/15 sm:min-h-28 ${i % 7 ? "border-l" : ""} ${i >= 7 ? "border-t" : ""} ${inMonth ? "" : "bg-sunken/40"}`}
             >
               <button
                 type="button"
                 onClick={() => onDay(d)}
-                aria-label={`Book ${label(d, { weekday: "long", month: "long", day: "numeric" })}`}
+                aria-label={`Open ${label(d, { weekday: "long", month: "long", day: "numeric" })}`}
                 className={`mx-auto mb-1 flex size-7 items-center justify-center rounded-full text-xs tabular-nums ${d === today ? "bg-gold font-semibold text-ink" : inMonth ? "text-fg hover:bg-sunken" : "text-muted/60 hover:bg-sunken"}`}
               >
                 {Number(d.slice(8))}
@@ -288,7 +389,7 @@ function Month({ from, cursor, today, byDay, onDay, onEvent, onMore }) {
               <ul className="grid gap-0.5">
                 {evs.slice(0, 3).map((ev) => (
                   <li key={ev.id}>
-                    <button type="button" onClick={() => onEvent(ev)} className={`block w-full truncate rounded border-l-2 px-1.5 py-0.5 text-left text-[0.7rem] leading-tight ${toneOf(ev)}`}>
+                    <button type="button" onClick={() => onEvent(ev)} {...dragFrom(ev)} style={look(ev).style} className={`block w-full truncate rounded border-l-2 px-1.5 py-0.5 text-left text-[0.7rem] leading-tight ${look(ev).className}`}>
                       {!ev.allDay && <span className="hidden tabular-nums opacity-75 sm:inline">{time(ev.start)} </span>}
                       {ev.title}
                     </button>
@@ -296,7 +397,7 @@ function Month({ from, cursor, today, byDay, onDay, onEvent, onMore }) {
                 ))}
               </ul>
               {evs.length > 3 && (
-                <button type="button" onClick={() => onMore(d)} className="mt-0.5 px-1.5 text-[0.7rem] font-medium text-muted hover:text-fg">
+                <button type="button" onClick={() => onDay(d)} className="mt-0.5 px-1.5 text-[0.7rem] font-medium text-muted hover:text-fg">
                   {evs.length - 3} more
                 </button>
               )}
@@ -308,92 +409,176 @@ function Month({ from, cursor, today, byDay, onDay, onEvent, onMore }) {
   );
 }
 
-// seven columns of hours; a booking sits at its time, as tall as it lasts, side by side when they overlap
-function Week({ from, today, byDay, onHour, onEvent }) {
-  const days = Array.from({ length: 7 }, (_, i) => addDays(from, i));
-  const hours = Array.from({ length: HOURS[1] - HOURS[0] }, (_, i) => HOURS[0] + i);
+// a day's timed bookings, each in the first lane free at its start, cut to the day
+function laid(evs, day) {
+  const xs = evs
+    .filter((e) => !e.allDay)
+    .map((ev) => {
+      const a = at(ev.start);
+      const b = at(ev.end);
+      const s = a.key < day ? 0 : a.min;
+      return { ev, s, e: Math.max(b.key > day ? 1440 : b.min, s + 20) };
+    });
+  const lanes = [];
+  for (const x of xs) {
+    x.lane = lanes.findIndex((end) => end <= x.s);
+    if (x.lane < 0) x.lane = lanes.push(0) - 1;
+    lanes[x.lane] = x.e;
+  }
+  return { xs, n: lanes.length };
+}
+// the hours to show: the working day, stretched to anything booked outside it
+const hoursFor = (all) => {
+  let [a, b] = HOURS;
+  for (const { xs } of all)
+    for (const { s, e } of xs) {
+      a = Math.min(a, Math.floor(s / 60));
+      b = Math.max(b, Math.ceil(e / 60));
+    }
+  return [a, Math.min(b, 24)];
+};
+
+function useNow() {
   const [now, setNow] = useState(() => at(new Date().toISOString()));
   useEffect(() => {
     const t = setInterval(() => setNow(at(new Date().toISOString())), 60e3);
     return () => clearInterval(t);
   }, []);
-  const top = (min) => ((Math.min(Math.max(min, HOURS[0] * 60), HOURS[1] * 60) - HOURS[0] * 60) / 60) * HOUR_PX;
-  const hourName = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
+  return now;
+}
+
+// one day of half-hour slots: click one to book it, drop a booking on one to move it there; the
+// day's bookings sit at their time, as tall as they last, side by side when they overlap
+function DayColumn({ day, today, now, plan, hours, px, onSlot, onEvent, onMove, times }) {
+  const top = (min) => ((Math.min(Math.max(min, hours[0] * 60), hours[1] * 60) - hours[0] * 60) / 60) * px;
+  const slots = Array.from({ length: (hours[1] - hours[0]) * 2 }, (_, i) => hours[0] * 60 + i * 30);
+  const busy = (m) => plan.xs.some(({ s, e }) => s < m + 30 && e > m);
+  return (
+    <div className="relative" style={{ height: slots.length * (px / 2) }}>
+      {slots.map((m) => (
+        <button
+          key={m}
+          type="button"
+          onClick={() => onSlot(day, m)}
+          {...dropOn((id) => onMove(id, day, m))}
+          aria-label={`Book ${label(day, { weekday: "long", month: "short", day: "numeric" })} at ${clock(m)}`}
+          style={{ height: px / 2 }}
+          className={`group flex w-full items-start border-line/70 px-2 text-left transition-colors hover:bg-gold/10 data-over:bg-gold/25 ${m % 60 ? "border-t border-dashed border-line/40" : "border-t"}`}
+        >
+          {times && !busy(m) && <span className="mt-1 hidden items-center gap-1 text-xs text-muted group-hover:flex group-focus-visible:flex"><Plus className="size-3.5" aria-hidden /> Book {clock(m)}</span>}
+        </button>
+      ))}
+      {plan.xs.map(({ ev, s, e, lane }) => (
+        <button
+          key={ev.id}
+          type="button"
+          onClick={() => onEvent(ev)}
+          {...dragFrom(ev)}
+          style={{ ...look(ev).style, top: top(s), height: Math.max(top(e) - top(s), 20), left: `calc(${(lane / plan.n) * 100}% + ${times ? 4 : 0}px)`, width: `calc(${100 / plan.n}% - ${times ? 8 : 2}px)` }}
+          className={`absolute overflow-hidden rounded-md border-l-[3px] px-1.5 py-0.5 text-left text-[0.7rem] leading-tight shadow-sm ${look(ev).className} ${ev.editable ? "cursor-grab active:cursor-grabbing" : ""}`}
+        >
+          <span className="block truncate font-medium">{ev.title}</span>
+          <span className="block truncate tabular-nums opacity-80">{time(ev.start)} – {time(ev.end)}</span>
+          {times && ev.location && <span className="block truncate opacity-80">{ev.location}</span>}
+        </button>
+      ))}
+      {day === today && now.min >= hours[0] * 60 && now.min <= hours[1] * 60 && (
+        <span aria-hidden style={{ top: top(now.min) }} className="pointer-events-none absolute inset-x-0 h-0.5 bg-danger">
+          <span className="absolute -top-1 -left-1 size-2.5 rounded-full bg-danger" />
+        </span>
+      )}
+    </div>
+  );
+}
+
+// the hour labels down the left of a day or a week
+function Hours({ hours, px, half }) {
+  return (
+    <div>
+      {Array.from({ length: (hours[1] - hours[0]) * (half ? 2 : 1) }, (_, i) => {
+        const m = hours[0] * 60 + i * (half ? 30 : 60);
+        return (
+          <p key={m} style={{ height: half ? px / 2 : px }} className={`-translate-y-2 pr-2 text-right text-[0.7rem] tabular-nums ${m % 60 ? "text-muted/60" : "text-muted"}`}>
+            {m === hours[0] * 60 ? "" : half ? clock(m) : hourName(m / 60)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+// all-day bookings, above a day's hours
+const AllDay = ({ evs, onEvent, className = "" }) =>
+  evs
+    .filter((e) => e.allDay)
+    .map((ev) => (
+      <button key={ev.id} type="button" onClick={() => onEvent(ev)} {...dragFrom(ev)} style={look(ev).style} className={`block truncate rounded border-l-2 px-1.5 py-0.5 text-left text-[0.7rem] ${look(ev).className} ${className}`}>
+        {ev.title}
+      </button>
+    ));
+
+// seven columns of half-hour slots
+function Week({ from, today, byDay, onDay, onSlot, onEvent, onMove }) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(from, i));
+  const now = useNow();
+  const plans = days.map((d) => laid(byDay.get(d) ?? [], d));
+  const hours = hoursFor(plans);
   return (
     <div className={`${card} overflow-x-auto`}>
       <div className="min-w-[46rem]">
         <div className="grid grid-cols-[3.5rem_repeat(7,1fr)] border-b border-line">
           <span />
           {days.map((d) => (
-            <div key={d} className="border-l border-line py-2 text-center">
-              <p className="label text-muted">{label(d, { weekday: "short" })}</p>
-              <p className={`mx-auto mt-0.5 flex size-8 items-center justify-center rounded-full font-display text-lg tabular-nums ${d === today ? "bg-gold text-ink" : "text-fg"}`}>{Number(d.slice(8))}</p>
-              {/* all-day bookings sit above the hours */}
-              {(byDay.get(d) ?? [])
-                .filter((e) => e.allDay)
-                .map((ev) => (
-                  <button key={ev.id} type="button" onClick={() => onEvent(ev)} className={`mx-1 mt-1 block w-[calc(100%-0.5rem)] truncate rounded border-l-2 px-1.5 py-0.5 text-left text-[0.7rem] ${toneOf(ev)}`}>
-                    {ev.title}
-                  </button>
-                ))}
+            <div key={d} {...dropOn((id) => onMove(id, d, null))} className="min-w-0 border-l border-line py-2 text-center data-over:bg-gold/15">
+              <button type="button" onClick={() => onDay(d)} className="group mx-auto block rounded-md px-2" aria-label={`Open ${label(d, { weekday: "long", month: "long", day: "numeric" })}`}>
+                <span className="label block text-muted">{label(d, { weekday: "short" })}</span>
+                <span className={`mx-auto mt-0.5 flex size-8 items-center justify-center rounded-full font-display text-lg tabular-nums group-hover:ring-2 group-hover:ring-gold/50 ${d === today ? "bg-gold text-ink" : "text-fg"}`}>{Number(d.slice(8))}</span>
+              </button>
+              <AllDay evs={byDay.get(d) ?? []} onEvent={onEvent} className="mx-1 mt-1 w-[calc(100%-0.5rem)]" />
             </div>
           ))}
         </div>
         <div className="grid grid-cols-[3.5rem_repeat(7,1fr)]">
-          <div>
-            {hours.map((h) => (
-              <p key={h} style={{ height: HOUR_PX }} className="-translate-y-2 pr-2 text-right text-[0.7rem] text-muted tabular-nums">
-                {h === HOURS[0] ? "" : hourName(h)}
-              </p>
-            ))}
-          </div>
-          {days.map((d) => {
-            const evs = (byDay.get(d) ?? [])
-              .filter((e) => !e.allDay)
-              .map((ev) => {
-                const s = at(ev.start).min;
-                const end = at(ev.end);
-                return { ev, s, e: Math.max(end.key === d ? end.min : 24 * 60, s + 20) };
-              });
-            // lanes: each booking takes the first lane free at its start
-            const lanes = [];
-            for (const x of evs) {
-              x.lane = lanes.findIndex((end) => end <= x.s);
-              if (x.lane < 0) x.lane = lanes.push(0) - 1;
-              lanes[x.lane] = x.e;
-            }
-            return (
-              <div key={d} className="relative border-l border-line" style={{ height: hours.length * HOUR_PX }}>
-                {hours.map((h) => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => onHour(d, h)}
-                    aria-label={`Book ${label(d, { weekday: "long", month: "short", day: "numeric" })} at ${hourName(h)}`}
-                    style={{ height: HOUR_PX }}
-                    className="block w-full border-t border-line/70 transition-colors hover:bg-bg"
-                  />
-                ))}
-                {evs.map(({ ev, s, e, lane }) => (
-                  <button
-                    key={ev.id}
-                    type="button"
-                    onClick={() => onEvent(ev)}
-                    style={{ top: top(s), height: Math.max(top(e) - top(s), 20), left: `${(lane / lanes.length) * 100}%`, width: `${100 / lanes.length}%` }}
-                    className={`absolute overflow-hidden rounded-md border-l-[3px] px-1.5 py-0.5 text-left text-[0.7rem] leading-tight shadow-sm ${toneOf(ev)}`}
-                  >
-                    <span className="block truncate font-medium">{ev.title}</span>
-                    <span className="block truncate tabular-nums opacity-80">{time(ev.start)} – {time(ev.end)}</span>
-                  </button>
-                ))}
-                {d === today && now.min >= HOURS[0] * 60 && now.min <= HOURS[1] * 60 && (
-                  <span aria-hidden style={{ top: top(now.min) }} className="pointer-events-none absolute inset-x-0 h-0.5 bg-danger">
-                    <span className="absolute -top-1 -left-1 size-2.5 rounded-full bg-danger" />
-                  </span>
-                )}
-              </div>
-            );
-          })}
+          <Hours hours={hours} px={HOUR_PX} />
+          {days.map((d, i) => (
+            <div key={d} className="min-w-0 border-l border-line">
+              <DayColumn day={d} today={today} now={now} plan={plans[i]} hours={hours} px={HOUR_PX} onSlot={onSlot} onEvent={onEvent} onMove={onMove} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// the side panel: one day's half-hour slots, with what's booked and what's free
+function DayPanel({ day, today, evs, onSlot, onEvent, onMove }) {
+  const now = useNow();
+  const plan = laid(evs, day);
+  const hours = hoursFor([plan]);
+  const px = 72;
+  const booked = plan.xs.reduce((n, { s, e }) => n + Math.max(0, Math.min(e, hours[1] * 60) - Math.max(s, hours[0] * 60)), 0);
+  const free = (hours[1] - hours[0]) * 60 - booked;
+  return (
+    <div className="grid gap-3 p-5">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted">
+          {plan.xs.length ? `${plan.xs.length} booking${plan.xs.length > 1 ? "s" : ""}` : "Nothing booked"} · about {Math.max(0, Math.round(free / 60))} hours free
+        </span>
+        <button type="button" className={`${btnGhost} ml-auto`} onClick={() => onSlot(day, day === today ? Math.ceil((now.min + 1) / 30) * 30 : 600)}>
+          <Plus className="size-4" aria-hidden /> Book
+        </button>
+      </div>
+      {evs.some((e) => e.allDay) && (
+        <div className="grid gap-1">
+          <p className="label text-muted">All day</p>
+          <AllDay evs={evs} onEvent={onEvent} className="w-full py-1 text-xs" />
+        </div>
+      )}
+      <div className="grid grid-cols-[4.5rem_1fr] pt-2">
+        <Hours hours={hours} px={px} half />
+        <div className="border-l border-line">
+          <DayColumn day={day} today={today} now={now} plan={plan} hours={hours} px={px} onSlot={onSlot} onEvent={onEvent} onMove={onMove} times />
         </div>
       </div>
     </div>
@@ -401,7 +586,7 @@ function Week({ from, today, byDay, onHour, onEvent }) {
 }
 
 // 60 days, a heading per day with something on it
-function List({ from, byDay, onEvent }) {
+function List({ from, byDay, onDay, onEvent }) {
   const days = Array.from({ length: 60 }, (_, i) => addDays(from, i)).filter((d) => byDay.has(d));
   if (!days.length)
     return (
@@ -413,13 +598,15 @@ function List({ from, byDay, onEvent }) {
     <div className="grid gap-4">
       {days.map((d) => (
         <section key={d} aria-label={label(d, { weekday: "long", month: "long", day: "numeric" })}>
-          <h3 className="label mb-2 text-muted">{label(d, { weekday: "long", month: "long", day: "numeric" })}</h3>
+          <h3 className="mb-2">
+            <button type="button" onClick={() => onDay(d)} className="label text-muted hover:text-fg">{label(d, { weekday: "long", month: "long", day: "numeric" })}</button>
+          </h3>
           <ul className={`${card} divide-y divide-line`}>
             {byDay.get(d).map((ev) => (
               <li key={ev.id}>
                 <button type="button" onClick={() => onEvent(ev)} className="grid w-full gap-1 px-4 py-3 text-left text-sm transition-colors hover:bg-bg sm:grid-cols-[7rem_1fr]">
                   <span className="flex items-center gap-2 tabular-nums text-muted">
-                    <span className={`size-2.5 shrink-0 rounded-sm border ${toneOf(ev)}`} aria-hidden />
+                    <span style={look(ev).style} className={`size-2.5 shrink-0 rounded-sm border ${look(ev).className}`} aria-hidden />
                     {ev.allDay ? "All day" : time(ev.start)}
                   </span>
                   <span className="min-w-0">
@@ -437,13 +624,21 @@ function List({ from, byDay, onEvent }) {
 }
 
 // one booking, opened from any view
-function Booking({ ev, onCancel }) {
+function Booking({ ev, onCancel, onEdit }) {
+  const first = at(ev.start, ev.allDay).key;
+  const last = ev.allDay ? addDays(ev.end.slice(0, 10), -1) : first;
   return (
     <div className="grid gap-4 text-sm">
       <p className="text-charcoal">
-        {label(at(ev.start, ev.allDay).key, { weekday: "long", month: "long", day: "numeric" })}
+        {label(first, { weekday: "long", month: "long", day: "numeric" })}
+        {last !== first && ` – ${label(last, { weekday: "long", month: "long", day: "numeric" })}`}
         {!ev.allDay && <span className="tabular-nums"> · {time(ev.start)} – {time(ev.end)}</span>}
       </p>
+      {ev.recurring && (
+        <p className="flex items-center gap-1.5 text-muted">
+          <Repeat className="size-4" aria-hidden /> One of a repeating series. Changes here apply to this one only.
+        </p>
+      )}
       {ev.location && (
         <p className="flex items-start gap-1.5">
           <MapPin className="mt-0.5 size-4 shrink-0 text-muted" aria-hidden /> {ev.location}
@@ -461,34 +656,86 @@ function Booking({ ev, onCancel }) {
           </ul>
         </div>
       )}
+      <p className="flex items-start gap-1.5 text-muted">
+        <Bell className="mt-0.5 size-4 shrink-0" aria-hidden />
+        {ev.reminders === null
+          ? "The calendar's default reminders"
+          : ev.reminders.length
+            ? ev.reminders.map((r) => `${r.method === "email" ? "Email" : "Notification"} ${(BEFORE.find(([m]) => m === r.minutes)?.[1] ?? `${r.minutes} minutes before`).toLowerCase()}`).join(" · ")
+            : "No reminders"}
+      </p>
+      {ev.notes && <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-muted">{ev.notes}</p>}
+      {!ev.editable && <p className="text-xs text-muted">Someone else's invitation: only its organiser can change it.</p>}
       <div className="flex flex-wrap gap-2">
+        {ev.editable && (
+          <button type="button" className={btn} onClick={onEdit}>
+            <Pencil className="size-4" aria-hidden /> Edit
+          </button>
+        )}
         {ev.lead_id && <Link to={`/leads/${ev.lead_id}`} className={btnGhost}>Open the lead</Link>}
         <a href={ev.link} target="_blank" rel="noopener noreferrer" className={btnGhost}>
           <ExternalLink className="size-4" aria-hidden /> Open in Google Calendar
         </a>
-        <button type="button" className={`${btnDanger} ml-auto`} onClick={onCancel}>Cancel booking</button>
+        {ev.editable && <button type="button" className={`${btnDanger} ml-auto`} onClick={onCancel}>Cancel booking</button>}
       </div>
     </div>
   );
 }
 
-// a day (tomorrow, unless given) at an hour (10:00), Manila time, as a datetime-local value
-function blank(key = addDays(keyOf(new Date()), 1), hour = 10) {
-  return { title: "", start: `${key}T${String(hour).padStart(2, "0")}:00`, minutes: "60", location: "", guest: "", notes: "", lead_id: null, lead_name: "" };
+// a day (tomorrow, unless given) at a minute of the day (10:00), an hour long, Manila time
+function blank(key = addDays(keyOf(new Date()), 1), min = 600) {
+  const start = slot(key, Math.min(min, 23 * 60));
+  return { title: "", allDay: false, start, end: shift(start, 60), location: "", guests: "", notes: "", color: "", reminders: [...NEW_REMINDERS], lead_id: null, lead_name: "" };
 }
+// a new booking's reminders: a phone notification half an hour before, an email the day before
+const NEW_REMINDERS = [{ method: "popup", minutes: 30 }, { method: "email", minutes: 1440 }];
+const BEFORE = [[0, "At the start"], [5, "5 minutes before"], [10, "10 minutes before"], [15, "15 minutes before"], [30, "30 minutes before"], [60, "1 hour before"], [120, "2 hours before"], [180, "3 hours before"], [1440, "1 day before"], [2880, "2 days before"], [10080, "1 week before"]];
+
+// a booking as the form holds it; an all-day one's end is its last day, not Google's day after
+function formOf(ev) {
+  return {
+    id: ev.id,
+    title: ev.title === "(no title)" ? "" : ev.title,
+    allDay: ev.allDay,
+    start: ev.allDay ? ev.start.slice(0, 10) : local(ev.start),
+    end: ev.allDay ? addDays(ev.end.slice(0, 10), -1) : local(ev.end),
+    location: ev.location,
+    guests: ev.guests.map((g) => g.email).join(", "),
+    notes: ev.notes ?? "",
+    color: ev.color ?? "",
+    reminders: ev.reminders, // null: the calendar's own
+    recurring: ev.recurring,
+  };
+}
+
+const LENGTHS = [[30, "30 min"], [60, "1 hr"], [90, "1½ hr"], [120, "2 hr"], [180, "3 hr"]];
 
 function BookingForm({ value: b, onChange, onDone, disabled }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => onChange({ ...b, [k]: e.target.value });
+  const len = b.allDay ? null : minutesBetween(b.start, b.end);
+
+  // a new start keeps the booking's length, as Google does
+  function setStart(e) {
+    const v = e.target.value;
+    if (!v) return onChange({ ...b, start: v });
+    onChange({ ...b, start: v, end: b.allDay ? addDays(v, Math.max(0, daysBetween(b.start, b.end))) : shift(v, len > 0 ? len : 60) });
+  }
+  function setAllDay(e) {
+    const on = e.target.checked;
+    const d = b.start.slice(0, 10);
+    onChange({ ...b, allDay: on, start: on ? d : `${d}T10:00`, end: on ? b.end.slice(0, 10) || d : `${d}T11:00` });
+  }
 
   async function submit(e) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
-      await api("google/book", { ...b, minutes: Number(b.minutes) });
-      toast(b.guest ? `Booked, and ${b.guest} has been invited` : "Booked");
+      await api(b.id ? "google/update" : "google/book", b);
+      const invited = b.guests.trim() ? " Google emails the guests." : "";
+      toast(b.id ? `Saved.${invited}` : `Booked.${invited}`);
       onDone();
     } catch (err) {
       setError(err.message);
@@ -501,29 +748,95 @@ function BookingForm({ value: b, onChange, onDone, disabled }) {
       {disabled && <ErrorNote error="Connect Google on this page first." />}
       <ErrorNote error={error} />
       {b.lead_name && <p className="text-sm text-muted">For {b.lead_name}</p>}
+      {b.recurring && <p className="flex items-center gap-1.5 text-sm text-muted"><Repeat className="size-4" aria-hidden /> Changes apply to this one in the series only.</p>}
       <Field label="Title">
         <input value={b.title} onChange={set("title")} required maxLength={200} placeholder="Viewing: name, property" className={input} />
       </Field>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={b.allDay} onChange={setAllDay} className="size-4 accent-navy" /> All day
+      </label>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Starts" hint="Manila time">
-          <input type="datetime-local" value={b.start} onChange={set("start")} required step={900} className={input} />
+          <input type={b.allDay ? "date" : "datetime-local"} value={b.start} onChange={setStart} required step={900} className={input} />
         </Field>
-        <Field label="Length">
-          <Select value={b.minutes} onChange={set("minutes")} className={input}>
-            {[30, 60, 90, 120, 180, 240].map((m) => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? "s" : ""}`}</option>)}
-          </Select>
+        <Field label="Ends">
+          <input type={b.allDay ? "date" : "datetime-local"} value={b.end} onChange={set("end")} required min={b.start} step={900} className={input} />
         </Field>
       </div>
+      {!b.allDay && (
+        <div className="-mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Length">
+          {LENGTHS.map(([m, l]) => (
+            <button key={m} type="button" onClick={() => onChange({ ...b, end: shift(b.start, m) })} aria-pressed={len === m} className={`rounded-full border px-3 py-1 text-xs transition-colors ${len === m ? "border-navy bg-navy text-cream" : "border-line text-muted hover:text-fg"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      )}
       <Field label="Where">
         <input value={b.location} onChange={set("location")} maxLength={500} placeholder="The property, the office, or a meeting link" className={input} />
       </Field>
-      <Field label="Guest's email" hint="Google emails them an invitation they can accept. Leave empty for a booking only you see.">
-        <input type="email" value={b.guest} onChange={set("guest")} maxLength={320} className={input} />
+      <Field label="Guests' emails" hint="Separate them with commas. Google emails each one an invitation they can accept, and any change. Leave empty for a booking only you see.">
+        <input value={b.guests} onChange={set("guests")} maxLength={4000} placeholder="client@gmail.com, agent@gmail.com" className={input} />
       </Field>
+      <Field label="Colour" hint="Google Calendar's own colours, so it looks the same there.">
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Colour">
+          <button type="button" role="radio" aria-checked={!b.color} onClick={() => onChange({ ...b, color: "" })} className={`h-7 rounded-full border px-2.5 text-xs ${!b.color ? "border-navy text-fg ring-2 ring-navy/30" : "border-line text-muted"}`}>
+            Default
+          </button>
+          {Object.entries(GCOLOR).map(([id, [name, hex]]) => (
+            <button key={id} type="button" role="radio" aria-checked={b.color === id} aria-label={name} title={name} onClick={() => onChange({ ...b, color: id })} style={{ background: hex }} className={`size-7 rounded-full ${b.color === id ? "ring-2 ring-navy ring-offset-2 ring-offset-surface" : ""}`} />
+          ))}
+        </div>
+      </Field>
+      <Reminders value={b.reminders} onChange={(reminders) => onChange({ ...b, reminders })} />
       <Field label="Notes">
-        <textarea value={b.notes} onChange={set("notes")} maxLength={4000} rows={3} className={input} />
+        <textarea value={b.notes} onChange={set("notes")} maxLength={8000} rows={3} className={input} />
       </Field>
-      <button className={btn} disabled={busy || disabled}>{busy ? "Booking…" : "Book it"}</button>
+      <button className={btn} disabled={busy || disabled}>{busy ? "Saving…" : b.id ? "Save changes" : "Book it"}</button>
     </form>
+  );
+}
+
+// when Google reminds the connected account: a notification (the Google Calendar app, on phone and
+// computer) or an email, up to five. null: whatever the calendar's own default is.
+function Reminders({ value, onChange }) {
+  const set = (i, k) => (e) => onChange(value.map((r, j) => (j === i ? { ...r, [k]: k === "minutes" ? Number(e.target.value) : e.target.value } : r)));
+  return (
+    <Field label="Reminders" hint="Google sends these to the connected account, as a notification in the Google Calendar app and by email. Guests get reminders from their own calendar.">
+      {value === null ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
+          The calendar's default reminders.
+          <button type="button" className="underline underline-offset-2 hover:text-fg" onClick={() => onChange([...NEW_REMINDERS])}>Set them for this booking</button>
+        </p>
+      ) : (
+        <div className="grid gap-2">
+          {value.map((r, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Select aria-label="How" value={r.method} onChange={set(i, "method")} className={`${input} w-40`}>
+                <option value="popup">Notification</option>
+                <option value="email">Email</option>
+              </Select>
+              <Select aria-label="When" value={String(r.minutes)} onChange={set(i, "minutes")} className={`${input} min-w-0 flex-1`}>
+                {(BEFORE.some(([m]) => m === r.minutes) ? BEFORE : [...BEFORE, [r.minutes, `${r.minutes} minutes before`]]).map(([m, l]) => (
+                  <option key={m} value={String(m)}>{l}</option>
+                ))}
+              </Select>
+              <button type="button" onClick={() => onChange(value.filter((_, j) => j !== i))} aria-label="Remove this reminder" className="press rounded-md p-2 text-muted hover:bg-sunken hover:text-fg">
+                <X className="size-4" aria-hidden />
+              </button>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-3 text-sm">
+            {value.length < 5 && (
+              <button type="button" className="flex items-center gap-1 text-muted hover:text-fg" onClick={() => onChange([...value, { method: "popup", minutes: 10 }])}>
+                <Plus className="size-4" aria-hidden /> Add a reminder
+              </button>
+            )}
+            {!value.length && <span className="text-muted">No reminders.</span>}
+            <button type="button" className="text-muted underline underline-offset-2 hover:text-fg" onClick={() => onChange(null)}>Use the calendar's default</button>
+          </div>
+        </div>
+      )}
+    </Field>
   );
 }

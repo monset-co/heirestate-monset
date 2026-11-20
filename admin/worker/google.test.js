@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sign, unsign, addMinutes, manilaDays } from "./google.js";
+import { sign, unsign, fields, manilaDays } from "./google.js";
 
 test("OAuth state: signed, expiring, tamper-proof", async () => {
   const s = await sign("k", "agent@example.com", 0);
@@ -19,8 +19,22 @@ test("a window of Manila days, at most 100", () => {
   assert.equal(manilaDays("nov", "dec"), null);
 });
 
-test("end time is wall-clock, across midnight", () => {
-  assert.equal(addMinutes("2026-11-20T14:00", 90), "2026-11-20T15:30:00");
-  assert.equal(addMinutes("2026-12-31T23:30", 60), "2027-01-01T00:30:00");
-  assert.equal(addMinutes("nope", 60), null);
+test("a booking's fields, as Google keeps them", () => {
+  const t = fields({ title: " Viewing ", start: "2026-11-20T14:00", end: "2026-11-20T15:30", guests: "A@x.co, b@y.co a@x.co", color: "5" });
+  assert.deepEqual(t.event.start, { dateTime: "2026-11-20T14:00:00", timeZone: "Asia/Manila", date: null });
+  assert.equal(t.event.summary, "Viewing");
+  assert.deepEqual(t.guests, ["a@x.co", "b@y.co"]);
+  assert.equal(t.event.colorId, "5");
+  const d = fields({ title: "Open house", allDay: true, start: "2026-12-31", end: "2026-12-31" });
+  assert.deepEqual(d.event.end, { date: "2027-01-01", dateTime: null, timeZone: null }, "Google's end day is the day after");
+  assert.ok(fields({ title: "x", start: "2026-11-20T14:00", end: "2026-11-20T14:00" }).error, "ends when it starts");
+  assert.ok(fields({ title: "x", allDay: true, start: "2026-11-21", end: "2026-11-20" }).error);
+  assert.ok(fields({ title: "", start: "2026-11-20T14:00", end: "2026-11-20T15:00" }).error);
+  assert.ok(fields({ title: "x", start: "2026-11-20T14:00", end: "2026-11-20T15:00", guests: ["nope"] }).error);
+  assert.equal(fields({ title: "x", start: "2026-11-20T14:00", end: "2026-11-20T15:00", color: "12" }).event.colorId, null);
+  const base = { title: "x", start: "2026-11-20T14:00", end: "2026-11-20T15:00" };
+  assert.deepEqual(fields(base).event.reminders, { useDefault: true });
+  assert.deepEqual(fields({ ...base, reminders: [{ method: "email", minutes: 1440 }] }).event.reminders, { useDefault: false, overrides: [{ method: "email", minutes: 1440 }] });
+  assert.deepEqual(fields({ ...base, reminders: [] }).event.reminders, { useDefault: false, overrides: [] }, "none at all");
+  assert.ok(fields({ ...base, reminders: [{ method: "sms", minutes: 10 }] }).error);
 });

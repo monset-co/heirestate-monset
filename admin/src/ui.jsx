@@ -102,6 +102,29 @@ export function Modal({ open, onClose, title, children }) {
   );
 }
 
+// A panel that slides in from the right, over the page: the same native <dialog> as Modal (Esc
+// and the backdrop close it). `head` sits beside the title, for the panel's own controls.
+export function Drawer({ open, onClose, title, head, children }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (open && !d.open) d.showModal();
+    if (!open && d.open) d.close();
+  }, [open]);
+  return (
+    <dialog ref={ref} onClose={onClose} onClick={(e) => e.target === e.currentTarget && onClose()} className="side flex-col border-l border-line bg-surface p-0 text-fg shadow-[-24px_0_48px_-12px_rgb(12_21_38/0.35)] open:flex">
+      <div className="flex items-center gap-2 border-b border-line px-5 py-3.5">
+        <h2 className="mr-auto font-display text-xl text-ink">{title}</h2>
+        {head}
+        <button onClick={onClose} className="press rounded-md p-1.5 text-muted hover:bg-sunken hover:text-fg" aria-label="Close">
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">{open && children}</div>
+    </dialog>
+  );
+}
+
 /**
  * The admin's own "are you sure?", in place of the browser's confirm():
  *   if (!(await ask({ title: "Delete this file?", body: "It can't be undone.", yes: "Delete", danger: true }))) return;

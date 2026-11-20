@@ -101,7 +101,8 @@
     }
   }
   dialog.modal::backdrop,
-  dialog.sheet::backdrop {
+  dialog.sheet::backdrop,
+  dialog.side::backdrop {
     background: rgb(12 21 38 / 0);
     transition:
       background-color 180ms ease,
@@ -109,7 +110,8 @@
       display 180ms allow-discrete;
   }
   dialog.modal[open]::backdrop,
-  dialog.sheet[open]::backdrop {
+  dialog.sheet[open]::backdrop,
+  dialog.side[open]::backdrop {
     background: rgb(12 21 38 / 0.55);
     @starting-style {
       background: rgb(12 21 38 / 0);
@@ -213,6 +215,27 @@
       transform: translateY(100%);
     }
   }
+
+  /* Side panel: the native <dialog>, docked to the right edge, full height (full width on phones) */
+  dialog.side {
+    margin: 0 0 0 auto;
+    height: 100dvh;
+    max-height: 100dvh;
+    width: min(28rem, 100vw);
+    max-width: 100vw;
+    transform: translateX(100%);
+    transition:
+      transform 220ms var(--ease-out),
+      overlay 220ms allow-discrete,
+      display 220ms allow-discrete;
+  }
+  dialog.side[open] {
+    transform: none;
+    transition-duration: 320ms;
+    @starting-style {
+      transform: translateX(100%);
+    }
+  }
 }
 
 @keyframes shimmer {
@@ -247,6 +270,8 @@
   [data-sheet="open"] .app-page,
   dialog.sheet,
   dialog.sheet[open],
+  dialog.side,
+  dialog.side[open],
   dialog.modal,
   dialog.modal[open],
   .press:active:not(:disabled) {
