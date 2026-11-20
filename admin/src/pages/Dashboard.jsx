@@ -1,14 +1,16 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, BellRing, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { useMe } from "../me";
 import { CountUp, Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Tabs, btn, card, input } from "../ui";
+import { Badge, Empty, ErrorNote, Select, Tabs, btn, card, input } from "../ui";
 import { ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, ago, papersDue, quiet, when } from "../crm";
 import { LOOKING_TO, tidyMobile } from "../match";
-import { kindFor } from "./LeadForm";
+import { device } from "../install";
+import { pushSupported, usePush } from "../push";
+import { SameLead, kindFor, useSameLead } from "./LeadForm";
 
 const manila = (opts) => new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", ...opts });
 
@@ -53,6 +55,7 @@ export default function Dashboard() {
       <div className="mt-4">
         <ErrorNote error={error} />
       </div>
+      <TurnOnAlerts />
 
       {/* Phones: agents work from here, so notes, today and a new lead come first */}
       <div className="mt-4 grid gap-6 md:hidden">
@@ -279,6 +282,7 @@ function QuickLead() {
   const [error, setError] = useState("");
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
+  const same = useSameLead(f.mobile);
   async function save(e) {
     e.preventDefault();
     setError("");
@@ -308,14 +312,15 @@ function QuickLead() {
         <ErrorNote error={error} />
         <input required value={f.name} onChange={set("name")} placeholder="Name" aria-label="Name" autoComplete="off" className={input} />
         <input value={f.mobile} onChange={set("mobile")} type="tel" inputMode="tel" placeholder="Mobile, 0917 123 4567" aria-label="Mobile" autoComplete="off" className={input} />
+        <SameLead lead={same} />
         <div className="grid grid-cols-2 gap-3">
-          <select value={f.source_site} onChange={set("source_site")} aria-label="Came from" className={input}>
+          <Select value={f.source_site} onChange={set("source_site")} aria-label="Came from" className={input}>
             {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
-          <select value={f.looking} onChange={set("looking")} aria-label="Looking to" className={input}>
+          </Select>
+          <Select value={f.looking} onChange={set("looking")} aria-label="Looking to" className={input}>
             <option value="">Looking to…</option>
-            {Object.keys(LOOKING_TO).map((k) => <option key={k}>{k}</option>)}
-          </select>
+            {Object.keys(LOOKING_TO).map((k) => <option key={k} value={k}>{k}</option>)}
+          </Select>
         </div>
         <textarea value={f.message} onChange={set("message")} rows={2} placeholder="What they want, in their words" aria-label="What they want" className={input} />
         <button disabled={busy} className={btn}>
@@ -350,7 +355,9 @@ function Visits() {
         {!now ? (
           <SkeletonRows n={3} />
         ) : now.error ? (
-          <p className="px-4 py-6 text-sm text-muted">{now.error}</p>
+          <div className="p-4">
+            <ErrorNote error={now.error} />
+          </div>
         ) : !now.sites.length ? (
           <Empty>No visits recorded in this period yet.</Empty>
         ) : (
@@ -437,5 +444,54 @@ function NeedsYou({ leads }) {
         </Section>
       )}
     </>
+  );
+}
+
+// Each person, on each phone and computer, is asked once to turn notifications on (the same switch
+// as in Settings). "Not now" hides it on this device; Settings still has it.
+const ASKED = "alerts-asked";
+function TurnOnAlerts() {
+  const push = usePush();
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(ASKED) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const hide = () => {
+    setHidden(true);
+    try {
+      localStorage.setItem(ASKED, "1");
+    } catch {
+      /* private window: it asks again next time */
+    }
+  };
+  // iPhone and iPad take notifications only from the installed app
+  const iosBrowser = !pushSupported() && device() === "ios";
+  if (hidden || push.on !== false || (!push.supported && !iosBrowser) || (push.supported && Notification.permission === "denied")) return null;
+  return (
+    <section aria-labelledby="alerts-ask" className={`${card} mt-4 flex flex-wrap items-center gap-3 border-gold/50 bg-gold/8 p-4`}>
+      <BellRing className="size-5 shrink-0 text-gold-ink" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <h2 id="alerts-ask" className="font-semibold text-ink">Turn on notifications</h2>
+        <p className="text-sm text-muted">
+          {iosBrowser
+            ? "On iPhone, install the app first, then open it from your home screen to turn them on."
+            : "Get an alert on this device for new inquiries, WhatsApp messages, tasks given to you and reminders that come due."}
+        </p>
+        <ErrorNote error={push.error} />
+      </div>
+      {iosBrowser ? (
+        <Link to="/settings#install" className={btn}>How to install</Link>
+      ) : (
+        <button type="button" className={btn} onClick={push.turnOn} disabled={push.busy}>
+          {push.busy ? "Turning on…" : "Turn on"}
+        </button>
+      )}
+      <button type="button" onClick={hide} className="press grid size-10 place-items-center rounded-md text-muted hover:bg-sunken hover:text-fg" aria-label="Not now">
+        <X className="size-4" aria-hidden />
+      </button>
+    </section>
   );
 }

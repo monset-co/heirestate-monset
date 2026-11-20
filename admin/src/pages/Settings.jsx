@@ -5,7 +5,7 @@ import { supabase, run } from "../supabase";
 import { Skeleton, toast } from "../motion";
 import { ErrorNote, Field, PageHeader, btn, btnGhost, card, input, Select } from "../ui";
 import { toCsv, download } from "../csv";
-import { api } from "../api";
+import { usePush } from "../push";
 
 const KEYS = ["contract_effective_date", "broker_name", "broker_prc_no", "broker_prc_valid_until", "broker_firm", "default_agent_id"];
 
@@ -97,53 +97,9 @@ function Section({ title, sub, children }) {
   );
 }
 
-// Push notifications on this device (admin/worker/push.js sends them, admin/sw.js shows them): a
-// task given to you, a new inquiry, a WhatsApp message, a reminder come due. Per device, per person.
+// Notifications on this device (push.js)
 function Alerts() {
-  const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-  const [on, setOn] = useState(null); // null while checking
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!supported) return setOn(false);
-    navigator.serviceWorker.ready.then((r) => r.pushManager.getSubscription()).then((s) => setOn(!!s), () => setOn(false));
-  }, [supported]);
-
-  async function turnOn() {
-    setBusy(true);
-    setError("");
-    try {
-      if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked for this site. Allow them in the browser's site settings, then try again.");
-      const { key } = await api("push/key");
-      if (!key) throw new Error("Notifications aren't set up on the server yet (VAPID keys).");
-      const reg = await navigator.serviceWorker.ready;
-      const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
-      const { endpoint, keys } = sub.toJSON();
-      await run(supabase.from("push_subscriptions").upsert({ endpoint, p256dh: keys.p256dh, auth: keys.auth }));
-      setOn(true);
-      toast("Notifications on for this device");
-    } catch (err) {
-      setError(err.message);
-    }
-    setBusy(false);
-  }
-
-  async function turnOff() {
-    setBusy(true);
-    setError("");
-    try {
-      const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
-      if (sub) {
-        await run(supabase.from("push_subscriptions").delete().eq("endpoint", sub.endpoint));
-        await sub.unsubscribe();
-      }
-      setOn(false);
-    } catch (err) {
-      setError(err.message);
-    }
-    setBusy(false);
-  }
+  const { supported, on, busy, error, turnOn, turnOff } = usePush();
 
   return (
     <section className={`${card} grid gap-3 p-5`} aria-labelledby="alerts-title">
@@ -176,6 +132,8 @@ export default function Settings() {
   const [saved, setSaved] = useState(null);
   const [users, setUsers] = useState([]);
   const [error, setError] = useState("");
+  const [exportError, setExportError] = useState(""); // shown by the Download buttons, not atop the form
+  const [exporting, setExporting] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -267,6 +225,9 @@ export default function Settings() {
         <InstallApp />
         <Alerts />
         <Section title="Export all data" sub="Every listing, lead and commission row, as CSV files that open in Excel or Google Sheets.">
+          <div className="sm:col-span-2">
+            <ErrorNote error={exportError} />
+          </div>
           {EXPORTS.map(([label, table, warn]) => (
             <div key={table} className="flex items-center justify-between gap-3 sm:col-span-2">
               <span className="text-sm">
@@ -276,16 +237,20 @@ export default function Settings() {
               <button
                 type="button"
                 className={btnGhost}
+                disabled={exporting === table}
                 onClick={async () => {
+                  setExportError("");
+                  setExporting(table);
                   try {
                     const rows = await everything(table);
                     download(`heir-estates-${table}-${new Date().toISOString().slice(0, 10)}.csv`, rows.length ? toCsv(rows, Object.keys(rows[0])) : "none");
                   } catch (e) {
-                    setError(e.message);
+                    setExportError(`${label}: ${e.message}`);
                   }
+                  setExporting("");
                 }}
               >
-                Download
+                {exporting === table ? "Preparing…" : "Download"}
               </button>
             </div>
           ))}
