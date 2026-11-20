@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, useEffect, useState } from "react";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
 import { MotionConfig } from "motion/react";
 import { supabase, run, SETTING_PASSWORD } from "./supabase";
@@ -7,22 +7,23 @@ import { Me } from "./me";
 import { ErrorNote, Field, btn, btnGhost, card, input } from "./ui";
 import Shell from "./Shell";
 import Dashboard from "./pages/Dashboard";
-import Leads from "./pages/Leads";
-import LeadDetail from "./pages/LeadDetail";
-import Listings from "./pages/Listings";
-import ListingDetail from "./pages/ListingDetail";
-import Commissions from "./pages/Commissions";
-import Report from "./pages/Report";
-import Users from "./pages/Users";
-import Settings from "./pages/Settings";
-import WhatsApp from "./pages/WhatsApp";
-import Guide from "./pages/Guide";
-import Calendar from "./pages/Calendar";
-import Inventory from "./pages/Inventory";
-import Email from "./pages/Email";
-import Notes from "./pages/Notes";
-import Library from "./pages/Library";
+const Leads = lazy(() => import("./pages/Leads"));
+const LeadDetail = lazy(() => import("./pages/LeadDetail"));
+const Listings = lazy(() => import("./pages/Listings"));
+const ListingDetail = lazy(() => import("./pages/ListingDetail"));
+const Commissions = lazy(() => import("./pages/Commissions"));
+const Report = lazy(() => import("./pages/Report"));
+const Users = lazy(() => import("./pages/Users"));
+const Settings = lazy(() => import("./pages/Settings"));
+const WhatsApp = lazy(() => import("./pages/WhatsApp"));
+const Guide = lazy(() => import("./pages/Guide"));
+const Calendar = lazy(() => import("./pages/Calendar"));
+const Inventory = lazy(() => import("./pages/Inventory"));
+const Email = lazy(() => import("./pages/Email"));
+const Notes = lazy(() => import("./pages/Notes"));
+const Library = lazy(() => import("./pages/Library"));
 
+// pages load when first opened, so the phone downloads the dashboard first, not the whole admin
 const router = createBrowserRouter([
   {
     element: <Shell />,
@@ -49,6 +50,18 @@ const router = createBrowserRouter([
     ],
   },
 ]);
+
+// Fades out index.html's opening screen once the app has something to show, not before the
+// logo's build has finished on a first open
+function hideSplash() {
+  const s = document.getElementById("splash");
+  if (!s || s.dataset.out) return;
+  s.dataset.out = "1";
+  setTimeout(() => {
+    s.style.opacity = "0";
+    setTimeout(() => s.remove(), 450);
+  }, Math.max(0, Number(s.dataset.until) - performance.now()));
+}
 
 // Signing in takes two steps: their password, then a code emailed to them (admin/worker). The
 // database lets a session see nothing until it has passed both (is_admin in supabase/migrations).
@@ -78,6 +91,9 @@ export default function App() {
     if (sessionId && !settingPassword) lookUp();
   }, [sessionId, settingPassword]);
 
+  const ready = session !== undefined && (!session || settingPassword || checked);
+  useEffect(() => void (ready && hideSplash()), [ready]);
+
   if (session === undefined) return <div className="min-h-dvh bg-navy" aria-busy="true" />;
   if (!session) return <SignIn />;
   if (settingPassword) return <SetPassword email={session.user.email} onDone={() => setSettingPassword(false)} />;
@@ -97,8 +113,8 @@ const Centre = ({ title, children }) => (
   <main className="grid min-h-dvh place-items-center bg-navy px-4 py-16">
     <div className="page-in w-full max-w-sm">
       <div className="mb-8 text-center text-cream">
-        <p className="font-display text-[2.6rem] leading-none">Heir Estates</p>
-        <p className="label mt-2 text-champagne">Admin</p>
+        <img src="/logo.svg" alt="Heir Estates" className="mx-auto h-28 w-auto" />
+        <p className="label mt-3 text-champagne">Admin</p>
       </div>
       <div className={`${card} p-6`}>
         {title && <h1 className="mb-4 font-display text-xl text-ink">{title}</h1>}

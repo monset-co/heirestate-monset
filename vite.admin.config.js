@@ -11,7 +11,7 @@ const serviceWorker = {
   name: "heir-admin-sw",
   apply: "build",
   generateBundle(_, bundle) {
-    const assets = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", ...Object.keys(bundle).map((f) => `/${f}`)];
+    const assets = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/logo.svg", "/loader.svg", ...Object.keys(bundle).map((f) => `/${f}`)];
     const version = Date.now().toString(36);
     const source = readFileSync("admin/sw.js", "utf8").replace("__VERSION__", version).replace("__ASSETS__", JSON.stringify([...new Set(assets)]));
     this.emitFile({ type: "asset", fileName: "sw.js", source });

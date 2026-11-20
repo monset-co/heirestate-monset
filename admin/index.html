@@ -13,8 +13,41 @@
     <meta name="apple-mobile-web-app-title" content="Heir Estates" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Heir Estates Admin</title>
+    <style>
+      /* the opening screen, painted before the app's script arrives: the site's loader on its dusk navy */
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(38% 34% at 50% 50%, rgb(196 155 76 / 0.22), transparent 70%),
+          radial-gradient(120% 90% at 50% 105%, #1d2e4c, #14213a 45%, #0c1526);
+        transition: opacity 0.45s ease-out;
+      }
+      #splash img {
+        width: min(78vw, 440px);
+        height: auto;
+      }
+    </style>
   </head>
-  <body>
+  <body style="margin: 0; background: #14213a">
+    <!-- The first open on a device plays the logo's build (3.9s); after that the finished logo shows
+         only until the app is ready. App.jsx fades it out (hideSplash). -->
+    <div id="splash" role="status" aria-label="Loading Heir Estates"><img alt="" /></div>
+    <script>
+      (function () {
+        var first = true;
+        try {
+          first = !localStorage.getItem("heir-admin-intro") && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+          localStorage.setItem("heir-admin-intro", "1");
+        } catch (e) {}
+        var s = document.getElementById("splash");
+        s.firstChild.src = first ? "/loader.svg" : "/logo.svg";
+        s.dataset.until = first ? 3900 : 400;
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

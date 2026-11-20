@@ -3,17 +3,17 @@
 // tab grows into a labelled pill, with everything else under More, a bottom sheet the page eases
 // back behind. Each page rises in on navigation.
 import Bell from "./Bell";
-import { BookOpen, Boxes, FolderOpen, Presentation, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
+import { BookOpen, Boxes, FolderOpen, Presentation, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, Plus, Sparkles, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useInstall } from "./install";
 import { supabase } from "./supabase";
 import { useMe } from "./me";
-import { spring, Toaster } from "./motion";
+import { SkeletonRows, spring, Toaster } from "./motion";
 import { Confirmer } from "./ui";
 
-// tab: on the phone tab bar (the rest live under More); quick: also on the thumb gear
+// tab: on the phone tab bar (the rest live under More); quick: also in the thumb ring
 export const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, tab: true },
   { to: "/leads", label: "Leads", icon: Inbox, tab: true },
@@ -53,9 +53,9 @@ function InstallButton({ className }) {
 
 function Mark() {
   return (
-    <div className="leading-none">
-      <p className="font-display text-[1.35rem] text-cream">Heir Estates</p>
-      <p className="label mt-1 text-champagne">Admin</p>
+    <div className="flex items-center gap-2.5 leading-none">
+      <img src="/logo.svg" alt="Heir Estates" className="h-12 w-auto md:h-14" />
+      <p className="label text-champagne">Admin</p>
     </div>
   );
 }
@@ -109,7 +109,9 @@ export default function Shell() {
 
         <main className="mx-auto w-full max-w-[90rem] min-w-0 px-4 py-6 print:p-0 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+5.5rem)] md:px-10 md:py-10">
           <div key={pathname} className="page-in">
-            <Outlet />
+            <Suspense fallback={<SkeletonRows />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>
@@ -154,7 +156,7 @@ export default function Shell() {
         </div>
       </nav>
 
-      <QuickGear items={nav.filter((n) => n.quick)} />
+      <QuickRing items={nav.filter((n) => n.quick)} />
       <MoreSheet open={more} onClose={() => setMore(false)} items={nav.filter((n) => !n.tab)} />
       <Toaster />
       <Confirmer />
@@ -162,45 +164,96 @@ export default function Shell() {
   );
 }
 
-// Phones: a gear by the right thumb, above the tab bar. Tap it and it turns, and the shortcuts
-// rise out of it, nearest the thumb first.
-function QuickGear({ items }) {
+// Phones: a button by the right thumb, above the tab bar. Press and hold: the shortcuts fan out in
+// a ring around it; slide onto one and let go to open it. A quick tap opens the ring to tap instead.
+const RING = 150; // px from the button's centre to each shortcut's
+function QuickRing({ items }) {
   const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState(null); // the shortcut under the finger
+  const press = useRef(null); // when the current press began
+  const navigate = useNavigate();
   const { pathname } = useLocation();
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
-    if (!open) return;
+    if (!open) return setHover(null);
     const esc = (e) => e.key === "Escape" && setOpen(false);
     addEventListener("keydown", esc);
     return () => removeEventListener("keydown", esc);
   }, [open]);
+  const buzz = () => navigator.vibrate?.(8);
+  const under = (e) => document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-to]")?.dataset.to ?? null;
+
+  const down = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId); // keep getting the moves while the finger slides off
+    press.current = Date.now();
+    if (!open) (setOpen(true), buzz());
+  };
+  const move = (e) => {
+    if (!press.current) return;
+    const to = under(e);
+    if (to !== hover) (setHover(to), to && buzz());
+  };
+  const up = (e) => {
+    if (!press.current) return;
+    const to = under(e);
+    const tap = Date.now() - press.current < 300;
+    press.current = null;
+    setHover(null);
+    if (to) {
+      setOpen(false);
+      navigate(to);
+    } else if (!tap) setOpen(false); // held and let go on nothing: put it away
+  };
+  const last = items.length - 1;
+
   return (
     <div className="print:hidden md:hidden">
       <AnimatePresence>
-        {open && (
-          <motion.div key="veil" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-navy-deep/40 backdrop-blur-[2px]" aria-hidden />
-        )}
+        {open && <motion.div key="veil" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-navy-deep/45 backdrop-blur-[2px]" aria-hidden />}
       </AnimatePresence>
-      <div className="fixed right-4 bottom-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+1rem)] z-40 flex flex-col items-end gap-2.5">
+      <div className="fixed right-5 bottom-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+1rem)] z-40 size-14">
         <AnimatePresence>
           {open && (
-            <motion.ul id="quick-gear" className="flex flex-col items-end gap-2.5">
+            <motion.ul key="ring" id="quick-ring" exit={{ opacity: 0, transition: { duration: 0.12 } }}>
               {items.map(({ to, label, icon: Icon }, i) => {
-                const n = items.length - 1 - i; // the one nearest the gear comes out first
+                const a = Math.PI - (i / last) * (Math.PI / 2); // from straight left round to straight up
+                const lit = hover === to;
                 return (
-                  <motion.li key={to} initial={{ opacity: 0, y: 16, scale: 0.8 }} animate={{ opacity: 1, y: 0, scale: 1, transition: { ...spring, delay: n * 0.03 } }} exit={{ opacity: 0, y: 10, scale: 0.9, transition: { duration: 0.12 } }}>
-                    <NavLink to={to} className={({ isActive }) => `press flex min-h-11 items-center gap-2.5 rounded-full py-2 pr-4 pl-3 text-sm font-medium shadow-lg ring-1 ring-cream/10 ${isActive ? "bg-side-2 text-champagne" : "bg-side text-cream"}`}>
-                      <Icon className="size-4 text-gold" aria-hidden /> {label}
+                  <motion.li
+                    key={to}
+                    className="absolute top-1/2 left-1/2 -mt-6 -ml-6"
+                    initial={{ x: 0, y: 0, scale: 0.4, opacity: 0 }}
+                    animate={{ x: Math.cos(a) * RING, y: -Math.sin(a) * RING, scale: lit ? 1.25 : 1, opacity: 1, transition: { ...spring, delay: i * 0.025 } }}
+                  >
+                    <NavLink
+                      to={to}
+                      data-to={to}
+                      aria-label={label}
+                      className={({ isActive }) => `grid size-12 place-items-center rounded-full shadow-lg ring-1 transition-colors ${lit ? "bg-gold text-navy-deep ring-gold" : isActive ? "bg-side-2 text-champagne ring-gold/40" : "bg-side text-cream ring-cream/15"}`}
+                    >
+                      <Icon className="size-5" aria-hidden />
                     </NavLink>
+                    <span className={`pointer-events-none absolute top-full left-1/2 mt-1 -translate-x-1/2 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap transition-colors ${lit ? "bg-gold text-navy-deep" : "bg-side/90 text-cream/85"}`}>{label}</span>
                   </motion.li>
                 );
               })}
             </motion.ul>
           )}
         </AnimatePresence>
-        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="quick-gear" aria-label={open ? "Close shortcuts" : "Shortcuts"} className="press grid size-14 place-items-center rounded-full bg-navy text-gold shadow-[0_6px_20px_-4px_rgb(20_33_58/0.5)] ring-1 ring-gold/30">
-          <motion.span animate={{ rotate: open ? 120 : 0 }} transition={spring} className="grid place-items-center">
-            <Settings className="size-6" aria-hidden />
+        <button
+          onPointerDown={down}
+          onPointerMove={move}
+          onPointerUp={up}
+          onPointerCancel={() => ((press.current = null), setOpen(false))}
+          onClick={(e) => e.detail === 0 && setOpen((o) => !o)} // keyboard: Enter or Space
+          onContextMenu={(e) => e.preventDefault()} // a long press mustn't open the phone's menu
+          aria-expanded={open}
+          aria-controls="quick-ring"
+          aria-label={open ? "Close shortcuts" : "Shortcuts: press and hold, slide to one"}
+          className="relative grid size-14 touch-none place-items-center rounded-full bg-gold text-navy-deep shadow-[0_8px_24px_-6px_rgb(20_33_58/0.55)] ring-4 ring-gold/25 select-none [-webkit-touch-callout:none]"
+        >
+          <motion.span animate={{ rotate: open ? 135 : 0, scale: open ? 0.9 : 1 }} transition={spring} className="grid place-items-center">
+            {open ? <Plus className="size-6" aria-hidden /> : <Sparkles className="size-6" aria-hidden />}
           </motion.span>
         </button>
       </div>

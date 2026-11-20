@@ -23,3 +23,14 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
     if (hadController) toast("A new version of the admin is ready.", { ms: 60_000, action: { label: "Reload", run: () => location.reload() } });
   });
 }
+
+// Pages load on demand. A tab left open across a deploy asks for the old build's page files, which
+// are gone: load the new build instead (once, so a real outage doesn't reload forever).
+addEventListener("vite:preloadError", (e) => {
+  try {
+    if (sessionStorage.getItem("reloaded-for-deploy")) return;
+    sessionStorage.setItem("reloaded-for-deploy", "1");
+  } catch {}
+  e.preventDefault();
+  location.reload();
+});
