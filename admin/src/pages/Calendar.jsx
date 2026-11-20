@@ -122,7 +122,7 @@ export default function Calendar() {
           setBooking({
             ...blank(),
             title: `Viewing: ${l.name}${l.listing ? `, ${l.listing.title}` : ""}`,
-            guests: l.email ?? "",
+            guests: l.email ? [l.email] : [],
             notes: l.viewing_time ? `They asked for: ${l.viewing_time}` : "",
             lead_id: l.id,
             lead_name: l.name,
@@ -331,6 +331,7 @@ export default function Calendar() {
           <BookingForm
             value={booking}
             onChange={setBooking}
+            seen={events}
             disabled={!google?.email}
             onDone={() => {
               setBooking(null);
@@ -685,7 +686,7 @@ function Booking({ ev, onCancel, onEdit }) {
 // a day (tomorrow, unless given) at a minute of the day (10:00), an hour long, Manila time
 function blank(key = addDays(keyOf(new Date()), 1), min = 600) {
   const start = slot(key, Math.min(min, 23 * 60));
-  return { title: "", allDay: false, start, end: shift(start, 60), location: "", guests: "", notes: "", color: "", reminders: [...NEW_REMINDERS], lead_id: null, lead_name: "" };
+  return { title: "", allDay: false, start, end: shift(start, 60), location: "", guests: [], notes: "", color: "", reminders: [...NEW_REMINDERS], lead_id: null, lead_name: "" };
 }
 // a new booking's reminders: a phone notification half an hour before, an email the day before
 const NEW_REMINDERS = [{ method: "popup", minutes: 30 }, { method: "email", minutes: 1440 }];
@@ -700,7 +701,7 @@ function formOf(ev) {
     start: ev.allDay ? ev.start.slice(0, 10) : local(ev.start),
     end: ev.allDay ? addDays(ev.end.slice(0, 10), -1) : local(ev.end),
     location: ev.location,
-    guests: ev.guests.map((g) => g.email).join(", "),
+    guests: ev.guests.map((g) => g.email),
     notes: ev.notes ?? "",
     color: ev.color ?? "",
     reminders: ev.reminders, // null: the calendar's own
@@ -710,7 +711,8 @@ function formOf(ev) {
 
 const LENGTHS = [[30, "30 min"], [60, "1 hr"], [90, "1½ hr"], [120, "2 hr"], [180, "3 hr"]];
 
-function BookingForm({ value: b, onChange, onDone, disabled }) {
+function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
+  const known = useKnown(seen);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => onChange({ ...b, [k]: e.target.value });
@@ -734,7 +736,7 @@ function BookingForm({ value: b, onChange, onDone, disabled }) {
     setError("");
     try {
       await api(b.id ? "google/update" : "google/book", b);
-      const invited = b.guests.trim() ? " Google emails the guests." : "";
+      const invited = b.guests.length ? " Google emails the guests." : "";
       toast(b.id ? `Saved.${invited}` : `Booked.${invited}`);
       onDone();
     } catch (err) {
@@ -750,7 +752,8 @@ function BookingForm({ value: b, onChange, onDone, disabled }) {
       {b.lead_name && <p className="text-sm text-muted">For {b.lead_name}</p>}
       {b.recurring && <p className="flex items-center gap-1.5 text-sm text-muted"><Repeat className="size-4" aria-hidden /> Changes apply to this one in the series only.</p>}
       <Field label="Title">
-        <input value={b.title} onChange={set("title")} required maxLength={200} placeholder="Viewing: name, property" className={input} />
+        <input value={b.title} onChange={set("title")} required maxLength={200} placeholder="Viewing: name, property" list="cal-titles" autoComplete="off" className={input} />
+        <datalist id="cal-titles">{TITLES.map((t) => <option key={t} value={`${t}${b.lead_name ? ` ${b.lead_name}` : " "}`} />)}</datalist>
       </Field>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={b.allDay} onChange={setAllDay} className="size-4 accent-navy" /> All day
@@ -773,10 +776,17 @@ function BookingForm({ value: b, onChange, onDone, disabled }) {
         </div>
       )}
       <Field label="Where">
-        <input value={b.location} onChange={set("location")} maxLength={500} placeholder="The property, the office, or a meeting link" className={input} />
+        <input value={b.location} onChange={set("location")} maxLength={500} placeholder="The property, the office, or a meeting link" list="cal-places" autoComplete="off" className={input} />
+        <datalist id="cal-places">{known.places.map((x) => <option key={x} value={x} />)}</datalist>
       </Field>
-      <Field label="Guests' emails" hint="Separate them with commas. Google emails each one an invitation they can accept, and any change. Leave empty for a booking only you see.">
-        <input value={b.guests} onChange={set("guests")} maxLength={4000} placeholder="client@gmail.com, agent@gmail.com" className={input} />
+      <Field label="Guests" hint="Type a name or an email: leads, the team and past guests come up. Google emails each one an invitation they can accept, and any change. Leave empty for a booking only you see.">
+        <Guests
+          value={b.guests}
+          people={known.people}
+          onChange={(guests) => onChange({ ...b, guests })}
+          // a lead picked when the booking isn't for anyone yet: it becomes theirs
+          onPick={(x) => onChange({ ...b, guests: [...b.guests, x.email], ...(x.lead_id && !b.lead_id ? { lead_id: x.lead_id, lead_name: x.name, title: b.title || `Viewing: ${x.name}` } : {}) })}
+        />
       </Field>
       <Field label="Colour" hint="Google Calendar's own colours, so it looks the same there.">
         <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Colour">
@@ -838,5 +848,143 @@ function Reminders({ value, onChange }) {
         </div>
       )}
     </Field>
+  );
+}
+
+const TITLES = ["Viewing:", "Tripping:", "Meeting:", "Call:", "Contract signing:", "Turnover:", "Follow-up:"];
+
+// what the form can suggest: people (leads with an email, the team, guests already on the
+// calendar) and places (listings, inventory buildings and locations), loaded once per form
+function useKnown(seen) {
+  const [known, setKnown] = useState({ people: [], places: [] });
+  useEffect(() => {
+    Promise.all([
+      run(supabase.from("leads").select("id, name, email").not("email", "is", null).order("created_at", { ascending: false }).limit(2000)),
+      run(supabase.from("admin_users").select("name, email").eq("active", true)),
+      run(supabase.from("listings").select("title, location")),
+      run(supabase.from("inventory").select("building, location").limit(3000)),
+    ]).then(
+      ([leads, team, listings, inventory]) => {
+        const people = new Map();
+        for (const l of leads) people.set(l.email.toLowerCase(), { email: l.email.toLowerCase(), name: l.name, kind: "Lead", lead_id: l.id });
+        for (const t of team) people.set(t.email, { email: t.email, name: t.name, kind: "Team" });
+        for (const ev of seen ?? []) for (const g of ev.guests) if (!people.has(g.email)) people.set(g.email, { email: g.email, name: "", kind: "Guest before" });
+        const places = new Set([...listings.flatMap((x) => [x.title, x.location]), ...inventory.flatMap((x) => [x.building, x.location])].filter(Boolean).map((x) => x.trim()));
+        setKnown({ people: [...people.values()], places: [...places].sort().slice(0, 1500) });
+      },
+      () => {} // suggestions are a nicety: the form works without them
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return known;
+}
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// guests as chips: type a name or an email, pick a suggestion (arrows and Enter), or finish an
+// email with Enter, a comma or a space; Backspace on an empty box takes the last one off
+function Guests({ value, people, onChange, onPick }) {
+  const [text, setText] = useState("");
+  const [active, setActive] = useState(0);
+  const [focus, setFocus] = useState(false);
+  const q = text.trim().toLowerCase();
+  const matches = q ? people.filter((p) => !value.includes(p.email) && (p.email.includes(q) || p.name.toLowerCase().includes(q))).slice(0, 6) : [];
+  const clear = () => {
+    setText("");
+    setActive(0);
+  };
+  const add = (email) => {
+    const e = email.trim().toLowerCase().replace(/[,;]$/, "");
+    if (EMAIL.test(e) && !value.includes(e)) onChange([...value, e]);
+    clear();
+  };
+  const pick = (p) => {
+    onPick(p);
+    clear();
+  };
+  function key(e) {
+    const stop = () => e.preventDefault();
+    if (e.key === "ArrowDown" && matches.length) {
+      stop();
+      setActive((a) => (a + 1) % matches.length);
+    } else if (e.key === "ArrowUp" && matches.length) {
+      stop();
+      setActive((a) => (a - 1 + matches.length) % matches.length);
+    } else if (e.key === "Enter" && q) {
+      stop();
+      if (matches[active]) pick(matches[active]);
+      else add(text);
+    } else if ((e.key === "," || e.key === " " || e.key === ";") && EMAIL.test(q)) {
+      stop();
+      add(text);
+    } else if (e.key === "Backspace" && !text && value.length) onChange(value.slice(0, -1));
+    else if (e.key === "Escape" && text) {
+      stop();
+      e.stopPropagation(); // clears the box, not the whole form
+      clear();
+    }
+  }
+  const nameOf = (email) => people.find((p) => p.email === email)?.name;
+  return (
+    <div className="relative">
+      <div className={`${input} flex min-h-10 flex-wrap items-center gap-1.5 py-1.5`}>
+        {value.map((g) => (
+          <span key={g} className="flex max-w-full items-center gap-1 rounded-full bg-sunken py-0.5 pr-1 pl-2.5 text-xs text-fg">
+            <span className="truncate">{nameOf(g) ? `${nameOf(g)} · ${g}` : g}</span>
+            <button type="button" onClick={() => onChange(value.filter((x) => x !== g))} aria-label={`Remove ${g}`} className="rounded-full p-0.5 text-muted hover:bg-line hover:text-fg">
+              <X className="size-3.5" aria-hidden />
+            </button>
+          </span>
+        ))}
+        <input
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setActive(0);
+          }}
+          onKeyDown={key}
+          onFocus={() => setFocus(true)}
+          onBlur={() => {
+            setFocus(false);
+            if (EMAIL.test(q)) add(text); // a whole email typed and left: keep it
+          }}
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          aria-label="Add a guest"
+          role="combobox"
+          aria-expanded={focus && matches.length > 0}
+          aria-controls="guest-matches"
+          aria-activedescendant={focus && matches[active] ? `guest-${active}` : undefined}
+          placeholder={value.length ? "Add another" : "Name or email"}
+          className="min-w-40 flex-1 bg-transparent text-sm outline-none"
+        />
+      </div>
+      {focus && matches.length > 0 && (
+        <ul id="guest-matches" role="listbox" className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-line bg-surface py-1 shadow-lg">
+          {matches.map((p, i) => (
+            <li
+              key={p.email}
+              id={`guest-${i}`}
+              role="option"
+              aria-selected={i === active}
+              // mousedown, so the pick lands before the box loses focus
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(p);
+              }}
+              onMouseEnter={() => setActive(i)}
+              className={`flex cursor-pointer items-center gap-2 px-3 py-2 text-sm ${i === active ? "bg-sunken" : ""}`}
+            >
+              <span className="min-w-0 flex-1 truncate">
+                {p.name && <span className="font-medium text-fg">{p.name} </span>}
+                <span className="text-muted">{p.email}</span>
+              </span>
+              <Badge value={p.kind === "Lead" ? "new" : p.kind === "Team" ? "closed" : "draft"}>{p.kind}</Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
