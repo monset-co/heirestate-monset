@@ -296,3 +296,12 @@
 @media (prefers-reduced-motion: reduce) {
   .sticky-note { transition: none; }
 }
+
+/* iOS zooms the page into any field under 16px; phones get 16px so typing a note doesn't jump the view */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

@@ -13,17 +13,17 @@ import { useMe } from "./me";
 import { spring, Toaster } from "./motion";
 import { Confirmer } from "./ui";
 
-// tab: on the phone tab bar (the rest live under More)
+// tab: on the phone tab bar (the rest live under More); quick: also on the thumb gear
 export const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, tab: true },
   { to: "/leads", label: "Leads", icon: Inbox, tab: true },
   { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, tab: true },
-  { to: "/notes", label: "Notes", icon: StickyNote },
-  { to: "/documents", label: "Documents", icon: FolderOpen },
-  { to: "/presentations", label: "Presentations", icon: Presentation },
-  { to: "/email", label: "Email", icon: Mail },
-  { to: "/inventory", label: "Inventory", icon: Boxes },
-  { to: "/calendar", label: "Calendar", icon: CalendarDays },
+  { to: "/notes", label: "Notes", icon: StickyNote, quick: true },
+  { to: "/documents", label: "Documents", icon: FolderOpen, quick: true },
+  { to: "/presentations", label: "Presentations", icon: Presentation, quick: true },
+  { to: "/email", label: "Email", icon: Mail, quick: true },
+  { to: "/inventory", label: "Inventory", icon: Boxes, quick: true },
+  { to: "/calendar", label: "Calendar", icon: CalendarDays, quick: true },
   { to: "/listings", label: "Listings", icon: Building2, tab: true },
   { to: "/commissions", label: "Commissions", icon: Receipt },
   { to: "/users", label: "Users", icon: Users },
@@ -107,7 +107,7 @@ export default function Shell() {
           </div>
         </aside>
 
-        <main className="mx-auto w-full max-w-[90rem] min-w-0 px-4 py-6 print:p-0 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+1.5rem)] md:px-10 md:py-10">
+        <main className="mx-auto w-full max-w-[90rem] min-w-0 px-4 py-6 print:p-0 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+5.5rem)] md:px-10 md:py-10">
           <div key={pathname} className="page-in">
             <Outlet />
           </div>
@@ -154,9 +154,56 @@ export default function Shell() {
         </div>
       </nav>
 
+      <QuickGear items={nav.filter((n) => n.quick)} />
       <MoreSheet open={more} onClose={() => setMore(false)} items={nav.filter((n) => !n.tab)} />
       <Toaster />
       <Confirmer />
+    </div>
+  );
+}
+
+// Phones: a gear by the right thumb, above the tab bar. Tap it and it turns, and the shortcuts
+// rise out of it, nearest the thumb first.
+function QuickGear({ items }) {
+  const [open, setOpen] = useState(false);
+  const { pathname } = useLocation();
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e) => e.key === "Escape" && setOpen(false);
+    addEventListener("keydown", esc);
+    return () => removeEventListener("keydown", esc);
+  }, [open]);
+  return (
+    <div className="print:hidden md:hidden">
+      <AnimatePresence>
+        {open && (
+          <motion.div key="veil" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-navy-deep/40 backdrop-blur-[2px]" aria-hidden />
+        )}
+      </AnimatePresence>
+      <div className="fixed right-4 bottom-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+1rem)] z-40 flex flex-col items-end gap-2.5">
+        <AnimatePresence>
+          {open && (
+            <motion.ul id="quick-gear" className="flex flex-col items-end gap-2.5">
+              {items.map(({ to, label, icon: Icon }, i) => {
+                const n = items.length - 1 - i; // the one nearest the gear comes out first
+                return (
+                  <motion.li key={to} initial={{ opacity: 0, y: 16, scale: 0.8 }} animate={{ opacity: 1, y: 0, scale: 1, transition: { ...spring, delay: n * 0.03 } }} exit={{ opacity: 0, y: 10, scale: 0.9, transition: { duration: 0.12 } }}>
+                    <NavLink to={to} className={({ isActive }) => `press flex min-h-11 items-center gap-2.5 rounded-full py-2 pr-4 pl-3 text-sm font-medium shadow-lg ring-1 ring-cream/10 ${isActive ? "bg-side-2 text-champagne" : "bg-side text-cream"}`}>
+                      <Icon className="size-4 text-gold" aria-hidden /> {label}
+                    </NavLink>
+                  </motion.li>
+                );
+              })}
+            </motion.ul>
+          )}
+        </AnimatePresence>
+        <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-controls="quick-gear" aria-label={open ? "Close shortcuts" : "Shortcuts"} className="press grid size-14 place-items-center rounded-full bg-navy text-gold shadow-[0_6px_20px_-4px_rgb(20_33_58/0.5)] ring-1 ring-gold/30">
+          <motion.span animate={{ rotate: open ? 120 : 0 }} transition={spring} className="grid place-items-center">
+            <Settings className="size-6" aria-hidden />
+          </motion.span>
+        </button>
+      </div>
     </div>
   );
 }

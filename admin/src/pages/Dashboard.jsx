@@ -1,12 +1,14 @@
 import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { useMe } from "../me";
-import { CountUp, Live, LiveLi, Skeleton, SkeletonRows } from "../motion";
-import { Badge, Empty, ErrorNote, Tabs, card } from "../ui";
-import { ON_THE_CLOCK, OPEN, SITES, STAGES, ago, papersDue, quiet, when } from "../crm";
+import { CountUp, Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
+import { Badge, Empty, ErrorNote, Tabs, btn, card, input } from "../ui";
+import { ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, ago, papersDue, quiet, when } from "../crm";
+import { LOOKING_TO, tidyMobile } from "../match";
+import { kindFor } from "./LeadForm";
 
 const manila = (opts) => new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", ...opts });
 
@@ -43,13 +45,20 @@ export default function Dashboard() {
   return (
     <>
       <div>
-        <h1 className="font-display text-[2.1rem] leading-tight tracking-[-0.01em] text-ink">
+        <h1 className="font-display text-[1.6rem] leading-tight md:text-[2.1rem] tracking-[-0.01em] text-ink">
           {greeting}, {me.name.split(/[ &]/)[0]}
         </h1>
         <p className="mt-1 text-muted">{manila({ weekday: "long", month: "long", day: "numeric" }).format(new Date())}</p>
       </div>
       <div className="mt-4">
         <ErrorNote error={error} />
+      </div>
+
+      {/* Phones: agents work from here, so notes, today and a new lead come first */}
+      <div className="mt-4 grid gap-6 md:hidden">
+        <QuickNote />
+        <Today reminders={data?.reminders} />
+        <QuickLead />
       </div>
 
       {/* the 1px gaps show the line colour behind: dividers that hold at any column count */}
@@ -75,7 +84,9 @@ export default function Dashboard() {
           <Visits />
           <Pipeline leads={data?.leads} />
         </div>
-        <div className="stagger grid content-start gap-8">
+        <div className="stagger grid content-start gap-8 max-lg:order-first">
+          {/* phones see these under Today */}
+          <div className="hidden md:block">
           <Section title="Follow-ups due" to="/leads" linkLabel="All leads">
             <div className={card}>
               {!data ? (
@@ -100,6 +111,7 @@ export default function Dashboard() {
               )}
             </div>
           </Section>
+          </div>
           <NeedsYou leads={data?.leads} />
           <Section title="Latest inquiries" to="/leads?list=all" linkLabel="All leads">
             <div className={card}>
@@ -149,6 +161,168 @@ function Section({ title, to, linkLabel, children, aside }) {
       </div>
       {children}
     </section>
+  );
+}
+
+// A private note in two taps; it lands in "My notes" on the Notes board
+function QuickNote() {
+  const [body, setBody] = useState("");
+  const [notes, setNotes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    run(supabase.from("tasks").select("id, body, created_at").eq("private", true).is("done_at", null).order("created_at", { ascending: false }).limit(3)).then(setNotes, (e) => setError(e.message));
+  }, []);
+
+  async function save(e) {
+    e.preventDefault();
+    if (!body.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const t = await run(supabase.from("tasks").insert({ body: body.trim(), private: true }).select("id, body, created_at").single());
+      setNotes((n) => [t, ...(n ?? [])].slice(0, 3));
+      setBody("");
+      toast("Kept in your notes");
+    } catch (err) {
+      setError(err.message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <Section title="Quick note" to="/notes" linkLabel="My notes">
+      <form onSubmit={save} className={`${card} grid gap-3 p-3`}>
+        <ErrorNote error={error} />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} maxLength={4000} placeholder="A number to call back, a unit seen, what the client said…" aria-label="Note" className={input} />
+        <button disabled={busy || !body.trim()} className={btn}>
+          {busy ? "Saving…" : "Save note"}
+        </button>
+        {notes?.length > 0 && (
+          <ul className="divide-y divide-line border-t border-line text-sm">
+            {notes.map((n) => (
+              <li key={n.id} className="flex gap-3 px-1 py-2">
+                <span className="line-clamp-2 min-w-0 flex-1 text-fg">{n.body}</span>
+                <span className="text-xs whitespace-nowrap text-muted">{ago(n.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </form>
+    </Section>
+  );
+}
+
+// Today: the Google Calendar bookings, then the follow-ups due
+function Today({ reminders }) {
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
+  const [events, setEvents] = useState(null);
+  const [off, setOff] = useState(false); // Google not connected, or unreachable
+  useEffect(() => {
+    api(`google/events?from=${day}&to=${day}`).then(
+      (r) => setEvents(r.events),
+      () => (setOff(true), setEvents([]))
+    );
+  }, [day]);
+  const time = (ev) => (ev.allDay ? "All day" : manila({ hour: "numeric", minute: "2-digit" }).format(new Date(ev.start)));
+  const loading = !events || !reminders;
+
+  return (
+    <Section title="Today" to="/calendar" linkLabel="Calendar">
+      <div className={card}>
+        {loading ? (
+          <SkeletonRows n={2} />
+        ) : !events.length && !reminders.length ? (
+          <Empty>{off ? <Link to="/calendar" className="underline">Connect Google Calendar</Link> : "Nothing booked and no follow-ups. A clear day."}</Empty>
+        ) : (
+          <ul className="divide-y divide-line text-sm">
+            {events.map((ev) => (
+              <li key={ev.id}>
+                <Link to="/calendar" className="flex gap-3 px-4 py-3 active:bg-sunken">
+                  <span className="w-16 shrink-0 tabular-nums text-muted">{time(ev)}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-fg">{ev.title}</span>
+                    {ev.location && <span className="block truncate text-xs text-muted">{ev.location}</span>}
+                  </span>
+                </Link>
+              </li>
+            ))}
+            {reminders.map((r) => (
+              <li key={`r${r.id}`}>
+                <Link to={`/leads/${r.lead_id}?tab=Reminders`} className="flex gap-3 px-4 py-3 active:bg-sunken">
+                  <span className={`w-16 shrink-0 text-xs ${Date.parse(r.due_at) < Date.now() ? "font-medium text-danger" : "text-muted"}`}>Follow up</span>
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-fg">{r.body}</span>
+                    <span className="block truncate text-xs text-muted">{r.lead?.name} · {when(r.due_at)}</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+            {off && (
+              <li className="px-4 py-3 text-xs text-muted">
+                Calendar not connected. <Link to="/calendar" className="underline">Connect it</Link>
+              </li>
+            )}
+          </ul>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+// The fewest fields a lead needs; the rest is filled in on the lead's page later
+function QuickLead() {
+  const navigate = useNavigate();
+  const blank = { name: "", mobile: "", source_site: "whatsapp", looking: "", message: "" };
+  const [f, setF] = useState(blank);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  async function save(e) {
+    e.preventDefault();
+    setError("");
+    const mobile = f.mobile.trim() ? tidyMobile(f.mobile) : "";
+    if (mobile === null) return setError("That mobile number doesn't look right. Use 0917 123 4567, or + and the country code.");
+    const looking_to = f.looking ? [f.looking] : [];
+    setBusy(true);
+    try {
+      const l = await run(
+        supabase
+          .from("leads")
+          .insert({ name: f.name.trim(), mobile, source_site: f.source_site, message: f.message.trim() || null, looking_to, category: kindFor(looking_to, "pre-selling") })
+          .select("id, name")
+          .single()
+      );
+      setF(blank);
+      toast(`${l.name} added`, { action: { label: "Open", run: () => navigate(`/leads/${l.id}`) } });
+    } catch (err) {
+      setError(/lead_lengths/.test(err.message) ? "The name needs at least 2 letters." : err.message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <Section title="New lead" to="/leads" linkLabel="All leads">
+      <form onSubmit={save} className={`${card} grid gap-3 p-3`}>
+        <ErrorNote error={error} />
+        <input required value={f.name} onChange={set("name")} placeholder="Name" aria-label="Name" autoComplete="off" className={input} />
+        <input value={f.mobile} onChange={set("mobile")} type="tel" inputMode="tel" placeholder="Mobile, 0917 123 4567" aria-label="Mobile" autoComplete="off" className={input} />
+        <div className="grid grid-cols-2 gap-3">
+          <select value={f.source_site} onChange={set("source_site")} aria-label="Came from" className={input}>
+            {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+          <select value={f.looking} onChange={set("looking")} aria-label="Looking to" className={input}>
+            <option value="">Looking to…</option>
+            {Object.keys(LOOKING_TO).map((k) => <option key={k}>{k}</option>)}
+          </select>
+        </div>
+        <textarea value={f.message} onChange={set("message")} rows={2} placeholder="What they want, in their words" aria-label="What they want" className={input} />
+        <button disabled={busy} className={btn}>
+          {busy ? "Adding…" : "Add lead"}
+        </button>
+      </form>
+    </Section>
   );
 }
 
