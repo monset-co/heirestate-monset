@@ -122,7 +122,7 @@ export default function Inventory() {
         </Select>
         <input aria-label="Highest price" inputMode="numeric" placeholder="Up to ₱ (their budget)" value={q.max} onChange={set("max")} className={`${input} sm:w-48`} />
       </div>
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <Select
           aria-label="Filter by area"
           value={q.where}
@@ -159,7 +159,7 @@ export default function Inventory() {
             {RADII.map((k) => <option key={k} value={String(k)}>within {k < 1 ? `${k * 1000} m` : `${k} km`}</option>)}
           </Select>
         )}
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2 text-sm whitespace-nowrap">
           <input type="checkbox" checked={q.pets} onChange={(e) => setQ({ ...q, pets: e.target.checked })} className="size-4 accent-navy" /> Pet-friendly only
         </label>
       </div>

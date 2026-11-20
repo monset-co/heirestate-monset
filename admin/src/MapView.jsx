@@ -30,7 +30,14 @@ export default function MapView({ pins = [], ring, movable, onMove, onPin, class
     map.current.on("focus", () => map.current.scrollWheelZoom.enable());
     map.current.on("blur", () => map.current.scrollWheelZoom.disable());
     map.current.on("click", (e) => moveRef.current?.([e.latlng.lat, e.latlng.lng]));
-    return () => map.current.remove();
+    // the box can still be growing when the map starts (a modal opening): re-measure whenever it
+    // changes size, or Leaflet loads tiles for the wrong size and leaves the rest grey
+    const sized = new ResizeObserver(() => map.current.invalidateSize());
+    sized.observe(box.current);
+    return () => {
+      sized.disconnect();
+      map.current.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
