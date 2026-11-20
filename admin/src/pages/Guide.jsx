@@ -69,7 +69,7 @@ const SECTIONS = [
     title: "Documents and Presentations",
     body: [
       "Documents holds the team's own files, the ones that belong to no single client: forms, price lists, spreadsheets, CSV exports. Presentations holds decks to show a client.",
-      "Drag files from your computer anywhere onto the page to add them, or press Upload. Documents takes PDF, Excel, CSV, Word, PowerPoint and photos; Presentations takes PDF and PowerPoint.",
+      "Drag files from your computer onto the page or the bin at the top to add them, or click the bin to choose them. Documents takes PDF, Excel, CSV, Word, PowerPoint and photos; Presentations takes PDF and PowerPoint.",
       "Tap a file to read it. PDFs open in the reader, CSVs as a table, and Excel, Word and PowerPoint in Microsoft's viewer. On a PDF deck, Present plays it full screen: arrow keys or swipe to move, Esc to stop.",
     ],
   },

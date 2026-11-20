@@ -64,58 +64,36 @@ export default function Dashboard() {
         <QuickLead />
       </div>
 
-      {/* the 1px gaps show the line colour behind: dividers that hold at any column count */}
+      {/* four numbers, each a door to its list: the whole tile is the link */}
       <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line shadow-[0_1px_2px_rgb(20_33_58/0.04),0_6px_20px_-12px_rgb(20_33_58/0.14)] lg:grid-cols-4">
-        {(stats ?? [0, 1, 2, 3].map((i) => [i])).map(([label, value, to], i) => (
-          <div key={i} className="bg-surface p-5">
-            <dt className="label text-muted">{label ?? <Skeleton className="h-3 w-24" />}</dt>
-            <dd className="mt-2">
-              {to ? (
-                <Link to={to} className="font-display text-[2.4rem] leading-none text-ink hover:text-accent-ink">
-                  <CountUp value={value} />
-                </Link>
-              ) : (
-                <Skeleton className="h-10 w-16" />
-              )}
-            </dd>
-          </div>
-        ))}
+        {(stats ?? [0, 1, 2, 3].map((i) => [i])).map(([label, value, to], i) =>
+          to ? (
+            <Link key={i} to={to} className="group relative bg-surface p-5 transition-colors duration-150 hover:bg-bg active:bg-sunken/60">
+              <dt className="label text-muted">{label}</dt>
+              <dd className="mt-2 font-display text-[2.4rem] leading-none text-ink tabular-nums">
+                <CountUp value={value} />
+              </dd>
+              <ArrowRight aria-hidden className="absolute top-5 right-5 size-4 text-muted opacity-0 transition-[opacity,transform] duration-200 ease-[var(--ease-out)] group-hover:translate-x-0.5 group-hover:opacity-100" />
+            </Link>
+          ) : (
+            <div key={i} className="bg-surface p-5">
+              <dt><Skeleton className="h-3 w-24" /></dt>
+              <dd className="mt-2"><Skeleton className="h-10 w-16" /></dd>
+            </div>
+          )
+        )}
       </dl>
 
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      {/* the day first (what's booked and due, then who's waiting), the pipeline beside it */}
+      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <div className="stagger grid content-start gap-8">
-          <Visits />
-          <Pipeline leads={data?.leads} />
-        </div>
-        <div className="stagger grid content-start gap-8 max-lg:order-first">
-          {/* phones see these under Today */}
+          {/* phones see Today above */}
           <div className="hidden md:block">
-          <Section title="Follow-ups due" to="/leads" linkLabel="All leads">
-            <div className={card}>
-              {!data ? (
-                <SkeletonRows n={2} />
-              ) : !data.reminders.length ? (
-                <Empty>Nothing due today. All caught up.</Empty>
-              ) : (
-                <ul className="divide-y divide-line">
-                  <Live>
-                    {data.reminders.map((r, i) => (
-                      <LiveLi key={r.id} i={i}>
-                        <Link to={`/leads/${r.lead_id}?tab=Reminders`} className="block px-4 py-3 text-sm transition-colors hover:bg-bg">
-                          <span className="font-medium text-fg">{r.body}</span>
-                          <span className={`block text-xs ${Date.parse(r.due_at) < Date.now() ? "text-danger" : "text-muted"}`}>
-                            {r.lead?.name} · {when(r.due_at)}
-                          </span>
-                        </Link>
-                      </LiveLi>
-                    ))}
-                  </Live>
-                </ul>
-              )}
-            </div>
-          </Section>
+            <Today reminders={data?.reminders} />
           </div>
           <NeedsYou leads={data?.leads} />
+        </div>
+        <div className="stagger grid content-start gap-8">
           <Section title="Latest inquiries" to="/leads?list=all" linkLabel="All leads">
             <div className={card}>
               {!data ? (
@@ -125,9 +103,9 @@ export default function Dashboard() {
               ) : (
                 <ul className="divide-y divide-line">
                   <Live>
-                    {data.leads.slice(0, 6).map((l, i) => (
+                    {data.leads.slice(0, 5).map((l, i) => (
                       <LiveLi key={l.id} i={i}>
-                        <Link to={`/leads/${l.id}`} className="flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-bg">
+                        <Link to={`/leads/${l.id}`} className="flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-bg active:bg-sunken/60">
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium text-fg">{l.name}</span>
                             <span className="block truncate text-xs text-muted">
@@ -144,7 +122,13 @@ export default function Dashboard() {
               )}
             </div>
           </Section>
+          <Pipeline leads={data?.leads} />
         </div>
+      </div>
+
+      {/* the sites' traffic: worth a look, not the day's work, so it comes last */}
+      <div className="mt-8">
+        <Visits />
       </div>
     </>
   );
@@ -241,7 +225,7 @@ function Today({ reminders }) {
           <ul className="divide-y divide-line text-sm">
             {events.map((ev) => (
               <li key={ev.id}>
-                <Link to="/calendar" className="flex gap-3 px-4 py-3 active:bg-sunken">
+                <Link to="/calendar" className="flex gap-3 px-4 py-3 transition-colors hover:bg-bg active:bg-sunken/60">
                   <span className="w-16 shrink-0 tabular-nums text-muted">{time(ev)}</span>
                   <span className="min-w-0">
                     <span className="block truncate font-medium text-fg">{ev.title}</span>
@@ -252,7 +236,7 @@ function Today({ reminders }) {
             ))}
             {reminders.map((r) => (
               <li key={`r${r.id}`}>
-                <Link to={`/leads/${r.lead_id}?tab=Reminders`} className="flex gap-3 px-4 py-3 active:bg-sunken">
+                <Link to={`/leads/${r.lead_id}?tab=Reminders`} className="flex gap-3 px-4 py-3 transition-colors hover:bg-bg active:bg-sunken/60">
                   <span className={`w-16 shrink-0 text-xs ${Date.parse(r.due_at) < Date.now() ? "font-medium text-danger" : "text-muted"}`}>Follow up</span>
                   <span className="min-w-0">
                     <span className="block truncate font-medium text-fg">{r.body}</span>

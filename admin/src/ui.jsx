@@ -1,9 +1,10 @@
 // The admin's building blocks, after the Monset dashboard (dashboard-monset/src/components/ui.tsx)
 // in the house's own hand: Bodoni titles, Marcellus labels, navy and gold.
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, Copy, Mail, MessageCircle, Share2, X } from "lucide-react";
 import { motion } from "motion/react";
 import { Children, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toast } from "./motion";
 
 export const input =
   "w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg placeholder:text-muted/80 outline-none transition-[border-color,box-shadow] duration-150 focus:border-accent focus:ring-3 focus:ring-accent/25 disabled:opacity-60";
@@ -455,5 +456,69 @@ export function Tabs({ items, value, onChange, label }) {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+// Share: the phone's own share sheet (WhatsApp, Messenger, Viber, email, anything installed), as
+// other apps do. Where the browser has none (most computers), a small menu: WhatsApp, Email, or
+// copy the text to paste into Messenger or anywhere else. `get` returns { title, text, url? }.
+export function ShareButton({ get, label = "Share", className = btnGhost, up = false }) {
+  const [menu, setMenu] = useState(null); // the message, while the fallback menu is open
+  const box = useRef(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e) => !box.current?.contains(e.target) && setMenu(null);
+    const esc = (e) => e.key === "Escape" && (e.stopPropagation(), setMenu(null));
+    addEventListener("pointerdown", away);
+    addEventListener("keydown", esc, true);
+    return () => (removeEventListener("pointerdown", away), removeEventListener("keydown", esc, true));
+  }, [menu]);
+
+  async function go() {
+    const m = get();
+    if (navigator.share) {
+      try {
+        return await navigator.share(m);
+      } catch (e) {
+        if (e.name === "AbortError") return; // closed the sheet: nothing to do
+      }
+    }
+    setMenu(m);
+  }
+  const all = menu && [menu.text, menu.url].filter(Boolean).join("\n\n");
+  const item = "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-sm text-fg hover:bg-sunken";
+  return (
+    <span ref={box} className="relative inline-flex">
+      <button type="button" onClick={go} aria-haspopup="menu" aria-expanded={!!menu} className={className}>
+        <Share2 className="size-4" aria-hidden /> {label}
+      </button>
+      {menu && (
+        <span role="menu" className={`absolute right-0 z-30 grid w-52 ${up ? "bottom-full mb-1 origin-bottom-right" : "top-full mt-1 origin-top-right"} rounded-lg border border-line bg-surface p-1 shadow-[0_12px_32px_-8px_rgb(12_21_38/0.28)] [animation:fade-in_140ms_var(--ease-out)]`}>
+          <a role="menuitem" href={`https://wa.me/?text=${encodeURIComponent(all)}`} target="_blank" rel="noopener noreferrer" onClick={() => setMenu(null)} className={item}>
+            <MessageCircle className="size-4 text-muted" aria-hidden /> WhatsApp
+          </a>
+          <a role="menuitem" href={`mailto:?subject=${encodeURIComponent(menu.title)}&body=${encodeURIComponent(all)}`} onClick={() => setMenu(null)} className={item}>
+            <Mail className="size-4 text-muted" aria-hidden /> Email
+          </a>
+          <button
+            type="button"
+            role="menuitem"
+            className={item}
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(all);
+                toast("Copied: paste it into Messenger or anywhere");
+              } catch {
+                /* clipboard refused: the menu stays so another way can be picked */
+                return;
+              }
+              setMenu(null);
+            }}
+          >
+            <Copy className="size-4 text-muted" aria-hidden /> Copy, for Messenger and others
+          </button>
+        </span>
+      )}
+    </span>
   );
 }

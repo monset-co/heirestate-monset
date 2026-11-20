@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { Skeleton } from "../motion";
-import { Badge, ErrorNote, Tabs, btnGhost } from "../ui";
-import { TYPES } from "../../../src/listings/types.js";
+import { Badge, ErrorNote, ShareButton, Tabs, btnGhost } from "../ui";
+import { TYPES, price } from "../../../src/listings/types.js";
 import { projects } from "../../../src/projects.js";
 import ListingForm from "./ListingForm";
 import PhotosTab from "./PhotosTab";
@@ -54,11 +54,21 @@ export default function ListingDetail() {
           <h1 className="font-display text-[2.1rem] leading-tight tracking-[-0.01em] text-ink">{l.title}</h1>
           <Badge value={l.status} />
           <Badge value={live ? "published" : "draft"}>{live ? "On the sites" : l.published ? "Published, hidden" : "Not published"}</Badge>
-          {live && (
-            <a href={url} target="_blank" rel="noopener" className={`${btnGhost} ml-auto`}>
-              View on the site <ExternalLink className="size-3.5" aria-hidden />
-            </a>
-          )}
+          <span className="ml-auto flex flex-wrap gap-2">
+            {live && (
+              <a href={url} target="_blank" rel="noopener" className={btnGhost}>
+                View on the site <ExternalLink className="size-3.5" aria-hidden />
+              </a>
+            )}
+            {/* what a client needs: the unit, where, the price, and its page once it's on the sites */}
+            <ShareButton
+              get={() => ({
+                title: l.title,
+                text: [l.title, [TYPES[l.type]?.label, projects[l.project]?.name, l.location].filter(Boolean).join(" · "), price(l), l.unit_type, l.floor_area && `${l.floor_area} sqm`].filter(Boolean).join("\n"),
+                url: live ? url : undefined,
+              })}
+            />
+          </span>
         </div>
         <p className="mt-1 text-sm text-muted">{[TYPES[l.type]?.label, projects[l.project]?.name, l.location].filter(Boolean).join(" · ")}</p>
       </div>

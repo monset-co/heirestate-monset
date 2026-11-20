@@ -1,11 +1,12 @@
 // The team's own files, after dashboard-monset's Documents and Presentations: one page for each
-// shelf. Drop files anywhere on the page (or Upload) and open them here: PDFs in the reader, or
+// shelf. Drop files anywhere on the page, or on the bin (which also opens the file picker when
+// clicked or tapped), and open them here: PDFs in the reader, or
 // presented full screen; CSVs as a table; Excel, Word and PowerPoint in Microsoft's viewer.
-import { Download, Play, Search, Trash2, Upload } from "lucide-react";
+import { ArrowDownToLine, Download, Play, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, SkeletonRows, toast } from "../motion";
-import { Empty, ErrorNote, PageHeader, ask, btn, btnGhost, card, input } from "../ui";
+import { Empty, ErrorNote, PageHeader, ask, btnGhost, card, input } from "../ui";
 import { ago } from "../crm";
 import { ICON, Viewer, kindOf, size } from "./FilesTab";
 
@@ -14,7 +15,7 @@ const MAX_MB = 50;
 const SHELVES = {
   documents: {
     title: "Documents",
-    sub: "The team's own files: forms, price lists, spreadsheets, CSV exports. Drop files anywhere on this page to add them.",
+    sub: "The team's own files: forms, price lists, spreadsheets, CSV exports.",
     types: ["pdf", "xlsx", "xls", "csv", "docx", "pptx", "jpg", "jpeg", "png", "webp"],
     say: "PDF, Excel, CSV, Word, PowerPoint and photos",
   },
@@ -46,7 +47,7 @@ export default function Library({ shelf }) {
   const [files, setFiles] = useState(null);
   const [q, setQ] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState("");
+  const [busy, setBusy] = useState(null); // { at, of } while uploading
   const [over, setOver] = useState(false);
   const [open, setOpen] = useState(null); // { file, url, present }
   const picker = useRef(null);
@@ -60,7 +61,7 @@ export default function Library({ shelf }) {
     setError("");
     let done = 0;
     for (const [i, file] of [...list].entries()) {
-      setBusy(`Uploading ${i + 1} of ${list.length}…`);
+      setBusy({ at: i, of: list.length });
       try {
         const e = ext(file.name);
         if (!s.types.includes(e)) throw new Error(`${file.name}: ${s.title} takes ${s.say} files`);
@@ -79,7 +80,7 @@ export default function Library({ shelf }) {
         setError(err.message);
       }
     }
-    setBusy("");
+    setBusy(null);
     if (done) toast(`${done === 1 ? "File" : `${done} files`} added`);
   }
 
@@ -135,14 +136,29 @@ export default function Library({ shelf }) {
         if (e.dataTransfer.files.length) upload(e.dataTransfer.files);
       }}
     >
-      <PageHeader title={s.title} sub={s.sub}>
-        <button type="button" className={btn} onClick={() => picker.current.click()} disabled={!!busy}>
-          <Upload className="size-4" aria-hidden /> {busy || "Upload"}
-        </button>
-        <input ref={picker} type="file" multiple hidden accept={s.types.map((t) => `.${t}`).join(",")} onChange={(e) => (upload(e.target.files), (e.target.value = ""))} />
-      </PageHeader>
+      <PageHeader title={s.title} sub={s.sub} />
 
       <div className="mt-6 grid max-w-5xl gap-4">
+        {/* the bin: files dropped here (or anywhere on the page) are added; a click or tap picks them */}
+        <button
+          type="button"
+          onClick={() => picker.current.click()}
+          disabled={!!busy}
+          data-over={over || undefined}
+          className="group relative grid place-items-center gap-1 overflow-hidden rounded-xl border-[1.5px] border-dashed border-line bg-surface/60 px-6 py-7 text-center transition-[border-color,background-color,transform] duration-200 ease-[var(--ease-out)] hover:border-muted/60 hover:bg-surface active:scale-[0.99] disabled:cursor-progress data-over:scale-[1.01] data-over:border-gold data-over:bg-gold/10"
+        >
+          <span className="grid size-10 place-items-center rounded-full bg-sunken text-muted transition-[transform,background-color,color] duration-200 ease-[var(--ease-out)] group-hover:-translate-y-0.5 group-hover:text-fg group-data-over:-translate-y-1 group-data-over:bg-gold group-data-over:text-navy-deep">
+            <ArrowDownToLine className="size-5" aria-hidden />
+          </span>
+          <span className="mt-1 text-sm font-medium text-fg">{busy ? `Adding ${busy.at + 1} of ${busy.of}…` : over ? `Let go to add to ${s.title}` : "Drop files here, or choose them"}</span>
+          <span className="text-xs text-muted">{s.say} · up to {MAX_MB} MB each</span>
+          {busy && (
+            <span aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-gold/20">
+              <span className="block h-full bg-gold transition-[width] duration-300 ease-[var(--ease-out)]" style={{ width: `${((busy.at + 0.5) / busy.of) * 100}%` }} />
+            </span>
+          )}
+        </button>
+        <input ref={picker} type="file" multiple hidden accept={s.types.map((t) => `.${t}`).join(",")} onChange={(e) => (upload(e.target.files), (e.target.value = ""))} />
         <ErrorNote error={error} />
         <label className="relative sm:max-w-xs">
           <span className="sr-only">Search {s.title.toLowerCase()}</span>
@@ -154,7 +170,7 @@ export default function Library({ shelf }) {
           {!shown ? (
             <div className="p-4"><SkeletonRows n={4} /></div>
           ) : !shown.length ? (
-            <Empty>{files.length ? "Nothing by that name." : `No ${s.title.toLowerCase()} yet. Drop ${s.say} files here, or press Upload.`}</Empty>
+            <Empty>{files.length ? "Nothing by that name." : `No ${s.title.toLowerCase()} yet. Drop the first ones in the bin above.`}</Empty>
           ) : (
             <ul className="divide-y divide-line">
               <Live>
@@ -190,11 +206,7 @@ export default function Library({ shelf }) {
         </div>
       </div>
 
-      {over && (
-        <div aria-hidden className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl border-2 border-dashed border-gold bg-gold/10 text-sm font-semibold text-gold-ink backdrop-blur-[1px]">
-          Drop to add to {s.title}
-        </div>
-      )}
+      {over && <div aria-hidden className="pointer-events-none absolute -inset-3 z-20 rounded-2xl ring-2 ring-gold/40" />}
       {open && <Viewer {...open} onClose={() => setOpen(null)} />}
     </div>
   );

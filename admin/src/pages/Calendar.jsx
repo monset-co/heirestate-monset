@@ -709,7 +709,8 @@ function formOf(ev) {
   };
 }
 
-const LENGTHS = [[30, "30 min"], [60, "1 hr"], [90, "1½ hr"], [120, "2 hr"], [180, "3 hr"]];
+const lengthName = (m) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} hr${m % 60 ? ` ${m % 60} min` : ""}`);
+const minOf = (t) => Number(t.slice(11, 13)) * 60 + Number(t.slice(14, 16));
 
 function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
   const known = useKnown(seen);
@@ -718,12 +719,20 @@ function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
   const set = (k) => (e) => onChange({ ...b, [k]: e.target.value });
   const len = b.allDay ? null : minutesBetween(b.start, b.end);
 
-  // a new start keeps the booking's length, as Google does
-  function setStart(e) {
-    const v = e.target.value;
-    if (!v) return onChange({ ...b, start: v });
+  // a new start (day or time) keeps the booking's length, as Google does
+  function setStart(v) {
+    if (!v) return;
     onChange({ ...b, start: v, end: b.allDay ? addDays(v, Math.max(0, daysBetween(b.start, b.end))) : shift(v, len > 0 ? len : 60) });
   }
+  // the times on offer: every quarter hour; a start or an end that would overlap another booking
+  // says so ("busy"), so a clash is seen before it's made
+  const day = b.start.slice(0, 10);
+  const taken = (seen ?? []).filter((e) => !e.allDay && e.id !== b.id).map((e) => [local(e.start), local(e.end)]);
+  const clash = (s, e) => taken.some(([a, z]) => a < e && z > s);
+  // a booking made in Google at an odd minute keeps its own time in the list
+  const withOwn = (list, t) => (list.includes(t) ? list : [...list, t].sort());
+  const starts = withOwn(Array.from({ length: 96 }, (_, i) => slot(day, i * 15)), b.start);
+  const ends = b.allDay ? [] : withOwn(Array.from({ length: 48 }, (_, i) => shift(b.start, (i + 1) * 15)), b.end);
   function setAllDay(e) {
     const on = e.target.checked;
     const d = b.start.slice(0, 10);
@@ -758,21 +767,35 @@ function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={b.allDay} onChange={setAllDay} className="size-4 accent-navy" /> All day
       </label>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Starts" hint="Manila time">
-          <input type={b.allDay ? "date" : "datetime-local"} value={b.start} onChange={setStart} required step={900} className={input} />
-        </Field>
-        <Field label="Ends">
-          <input type={b.allDay ? "date" : "datetime-local"} value={b.end} onChange={set("end")} required min={b.start} step={900} className={input} />
-        </Field>
-      </div>
-      {!b.allDay && (
-        <div className="-mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Length">
-          {LENGTHS.map(([m, l]) => (
-            <button key={m} type="button" onClick={() => onChange({ ...b, end: shift(b.start, m) })} aria-pressed={len === m} className={`rounded-full border px-3 py-1 text-xs transition-colors ${len === m ? "border-navy bg-navy text-cream" : "border-line text-muted hover:text-fg"}`}>
-              {l}
-            </button>
-          ))}
+      {/* the day on its own; the times as lists of quarter hours, Manila time */}
+      {b.allDay ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="From">
+            <input type="date" value={b.start} onChange={(e) => setStart(e.target.value)} required className={`${input} tabular-nums`} />
+          </Field>
+          <Field label="To">
+            <input type="date" value={b.end} onChange={set("end")} required min={b.start} className={`${input} tabular-nums`} />
+          </Field>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-[1.2fr_1fr_1fr]">
+          <Field label="Day">
+            <input type="date" value={day} onChange={(e) => e.target.value && setStart(`${e.target.value}T${b.start.slice(11)}`)} required className={`${input} tabular-nums`} />
+          </Field>
+          <Field label="Starts">
+            <Select value={b.start} onChange={(e) => setStart(e.target.value)} aria-label="Starts" className={`${input} tabular-nums`}>
+              {starts.map((t) => (
+                <option key={t} value={t}>{`${clock(minOf(t))}${clash(t, shift(t, len > 0 ? len : 60)) ? "  · busy" : ""}`}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Ends" hint={len > 0 ? lengthName(len) : undefined}>
+            <Select value={b.end} onChange={set("end")} aria-label="Ends" className={`${input} tabular-nums`}>
+              {ends.map((t) => (
+                <option key={t} value={t}>{`${clock(minOf(t))} · ${lengthName(minutesBetween(b.start, t))}${clash(b.start, t) ? " · busy" : ""}`}</option>
+              ))}
+            </Select>
+          </Field>
         </div>
       )}
       <Field label="Where">

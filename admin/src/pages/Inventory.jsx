@@ -11,7 +11,7 @@ import { useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { SkeletonRows, spring, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask, ShareButton } from "../ui";
 
 const STATUSES = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
 const TABS = [
@@ -329,13 +329,30 @@ function PropertyView({ row: r, onEdit }) {
           ))}
         </div>
       )}
-      <div>
+      <div className="flex flex-wrap gap-2">
         <button type="button" className={btn} onClick={onEdit}>
           <Pencil className="size-4" aria-hidden /> Edit
         </button>
+        <ShareButton get={() => shareOf(r)} up />
       </div>
     </div>
   );
+}
+
+// a property as a message for a client: what it is, where, the price and the facts, its own
+// write-up, and the public Facebook post if there is one. Never the owner, the codes or the papers.
+function shareOf(r) {
+  const today = new Date().toISOString().slice(0, 10);
+  const facts = [
+    r.furnishing,
+    r.available_from > today ? `Available from ${date(r.available_from)}` : r.available === false ? null : "Available now",
+    r.pet_friendly === "yes" ? "Pet-friendly" : null,
+  ].filter(Boolean);
+  const title = [r.type, r.location].filter(Boolean).join(", ") || "A property";
+  const text = r.summary?.trim()
+    ? [title, `${priceOf(r)}${r.price_note ? ` (${r.price_note})` : ""}`, r.summary.trim()]
+    : [title, `${priceOf(r)}${r.price_note ? ` (${r.price_note})` : ""}`, facts.join(" · "), r.specs && `Specs: ${r.specs}`, r.inclusions && `Inclusions: ${r.inclusions}`, r.payment_terms && `Payment terms: ${r.payment_terms}`];
+  return { title, text: text.filter(Boolean).join("\n\n"), url: r.fb_post_url || undefined };
 }
 
 const FURNISHING = ["", "Fully furnished", "Semi-furnished", "Furnished", "Finished", "Unfurnished"];

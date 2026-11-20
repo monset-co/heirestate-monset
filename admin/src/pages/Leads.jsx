@@ -1,4 +1,4 @@
-import { ChevronRight, Plus, Search } from "lucide-react";
+import { ChevronRight, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { useMe } from "../me";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
@@ -42,6 +42,8 @@ export default function Leads() {
   // the tab in the address, else the one used last on this device
   const kind = CATEGORIES[params.get("kind")] ? params.get("kind") : CATEGORIES[remembered()] ? remembered() : "pre-selling";
   const [adding, setAdding] = useState(false);
+  const [filters, setFilters] = useState(false); // phones: the list, stage and site pickers, folded away
+  const filtered = (listKey !== "open") + !!stage + !!site;
 
   useEffect(() => {
     Promise.all([
@@ -91,7 +93,8 @@ export default function Leads() {
         />
       </div>
 
-      <div role="group" aria-label="Quick lists" className="mt-4 flex gap-2 overflow-x-auto pb-1">
+      {/* quick lists as chips from tablets up; on phones they're the Show picker under Filters */}
+      <div role="group" aria-label="Quick lists" className="mt-4 hidden flex-wrap gap-2 sm:flex">
         {Object.entries(LISTS).map(([k, [label, test]]) => {
           const n = list?.filter((l) => l.category === kind && test(l, me)).length;
           return (
@@ -111,12 +114,29 @@ export default function Leads() {
         })}
       </div>
 
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-        <label className="relative sm:max-w-xs sm:flex-1">
+      <div className="mt-4 flex flex-wrap gap-3 sm:mt-3">
+        <label className="relative min-w-0 flex-1 sm:max-w-xs">
           <span className="sr-only">Search leads</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" aria-hidden />
           <input type="search" placeholder="Search name, email, mobile…" value={text} onChange={(e) => setText(e.target.value)} className={`${input} pl-9`} />
         </label>
+        <button
+          type="button"
+          onClick={() => setFilters((f) => !f)}
+          aria-expanded={filters}
+          aria-controls="lead-filters"
+          className={`press relative inline-flex h-10 items-center gap-1.5 rounded-md border px-3 text-sm font-medium sm:hidden ${filters || filtered ? "border-navy text-fg" : "border-line text-muted"}`}
+        >
+          <SlidersHorizontal className="size-4" aria-hidden /> Filters
+          {filtered > 0 && <span className="grid size-5 place-items-center rounded-full bg-navy text-[0.7rem] text-cream tabular-nums">{filtered}</span>}
+        </button>
+        <div id="lead-filters" className={`w-full flex-col gap-3 sm:flex sm:w-auto sm:flex-row ${filters ? "flex" : "hidden"}`}>
+        <Select aria-label="Show" value={listKey} onChange={(e) => setParams((p) => (e.target.value === "open" ? p.delete("list") : p.set("list", e.target.value), p), { replace: true })} className={`${input} sm:hidden`}>
+          {Object.entries(LISTS).map(([k, [label, test]]) => {
+            const n = list?.filter((l) => l.category === kind && test(l, me)).length;
+            return <option key={k} value={k}>{n > 0 && k !== "all" ? `${label} · ${n}` : label}</option>;
+          })}
+        </Select>
         <Select aria-label="Filter by stage" value={stage} onChange={set("stage")} className={`${input} sm:w-44`}>
           <option value="">Any stage</option>
           {Object.entries(STAGES).map(([k, s]) => <option key={k} value={k}>{s}</option>)}
@@ -125,11 +145,12 @@ export default function Leads() {
           <option value="">Every site</option>
           {Object.entries(SITES).map(([k, s]) => <option key={k} value={k}>{s}</option>)}
         </Select>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
         <ErrorNote error={error} />
-        <p className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted" aria-label="Legend">
+        <p className="ml-auto hidden flex-wrap items-center gap-1.5 text-xs text-muted sm:flex" aria-label="Legend">
           What they want: <Chip tone="violet">Type</Chip> <Chip tone="sky">Where</Chip> <Chip tone="teal">Building</Chip> <Chip tone="gold">Budget</Chip>
         </p>
       </div>
