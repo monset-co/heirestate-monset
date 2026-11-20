@@ -1,7 +1,7 @@
 import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useInstall, device } from "../install";
-import { supabase, run } from "../supabase";
+import { supabase, run, every } from "../supabase";
 import { Skeleton, toast } from "../motion";
 import { ErrorNote, Field, PageHeader, btn, btnGhost, card, input, Select } from "../ui";
 import { toCsv, download } from "../csv";
@@ -62,14 +62,7 @@ function InstallApp() {
 }
 
 // Everything, as CSV (contract 8.5 and 11.4): each table in full, page by page
-async function everything(table, select = "*") {
-  const rows = [];
-  for (let from = 0; ; from += 1000) {
-    const page = await run(supabase.from(table).select(select).order("id").range(from, from + 999));
-    rows.push(...page);
-    if (page.length < 1000) return rows;
-  }
-}
+const everything = (table, select = "*") => every(() => supabase.from(table).select(select).order("id"));
 const EXPORTS = [
   ["Listings", "listings"],
   ["Leads", "leads", "Holds people's personal details: keep the file safe and delete it when done."],

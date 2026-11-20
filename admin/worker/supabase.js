@@ -43,9 +43,15 @@ const q = encodeURIComponent;
 // Who sent this request: Supabase Auth checks their token, so a forged one gets nothing. Returns
 // their email and session, whether they're an active admin, and whether this session has passed
 // the second step; or null.
+// a fully signed-in admin is remembered for a minute per token in this isolate, saving two trips
+// to Supabase on each request; someone switched off loses the Worker's routes within that minute
+// (the database itself refuses them at once)
+const seen = new Map();
 export async function whoIs(req, env) {
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer /, "");
   if (!token) return null;
+  const hit = seen.get(token);
+  if (hit && hit.until > Date.now()) return hit.me;
   const r = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, { headers: { ...headers(env.SUPABASE_SECRET_KEY), Authorization: `Bearer ${token}` } });
   if (!r.ok) return null;
   const user = await r.json();
@@ -56,5 +62,10 @@ export async function whoIs(req, env) {
     db(env).get(`admin_users?select=id,name&email=eq.${q(email)}&active=eq.true`),
     db(env).get(`second_factor?select=verified_at&session_id=eq.${q(session)}`),
   ]);
-  return { email, session, admin: admins[0] ?? null, verified: !!factors[0]?.verified_at };
+  const me = { email, session, admin: admins[0] ?? null, verified: !!factors[0]?.verified_at };
+  if (me.admin && me.verified) {
+    if (seen.size > 500) seen.clear();
+    seen.set(token, { me, until: Date.now() + 60e3 });
+  }
+  return me;
 }

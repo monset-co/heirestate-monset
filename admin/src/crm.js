@@ -32,6 +32,8 @@ export const quiet = (lastContact) => !!lastContact && Date.now() - Date.parse(l
 const day =new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric" });
 const full = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
 export const when = (iso) => full.format(new Date(iso));
+// pesos as the team writes them: ₱25,000
+export const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
 // "Today, 9:14 AM", "Yesterday", "Nov 12"
 export function ago(iso) {
   const d = new Date(iso);
@@ -48,3 +50,6 @@ export const TEMPLATES = [
   { name: "follow_up", label: "Check in", text: "Hi {{1}}, it's {{2}} from Heir Estates. Just checking in on your interest in {{3}}. Any questions I can answer?" },
   { name: "papers_reminder", label: "Papers reminder", text: "Hi {{1}}, a reminder that your reservation papers are due by {{2}}. Send them here or to your agent." },
 ];
+
+// the map pins' colours, as the inventory's badges have them (MapView.jsx)
+export const PIN = { open: "#2f6b4f", pre: "#b08a3e", held: "#c9a24a", gone: "#8a8f98" };

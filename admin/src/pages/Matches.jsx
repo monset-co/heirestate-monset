@@ -4,10 +4,11 @@
 import { Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { supabase, run } from "../supabase";
+import { supabase, run, every } from "../supabase";
 import { SkeletonRows, toast } from "../motion";
 import { Empty, ErrorNote, btnGhost, card } from "../ui";
 import { LOOKING_TO, fit, matches } from "../match";
+import { peso } from "../crm";
 
 const TONES = {
   navy: "bg-navy/10 text-navy",
@@ -33,7 +34,6 @@ const CRITERIA = [
   ["when", "Free in time", "burgundy"],
 ];
 const START = { "pre-selling": ["Pre-selling"], rentals: ["For Rent", "Rented"], brokerage: ["For Sale", "For Assume"] };
-const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
 
 export default function Matches({ lead }) {
   const [rows, setRows] = useState(null);
@@ -46,7 +46,7 @@ export default function Matches({ lead }) {
 
   useEffect(() => {
     if (!statuses.length) return setList([]);
-    run(supabase.from("inventory").select("id, status, type, location, building, price, price_text, furnishing, available, available_from, lat, lng, geo").overlaps("status", statuses)).then(
+    every(() => supabase.from("inventory").select("id, status, type, location, building, price, price_text, furnishing, available, available_from, lat, lng, geo").overlaps("status", statuses).order("id")).then(
       setRows,
       (e) => setError(e.message)
     );

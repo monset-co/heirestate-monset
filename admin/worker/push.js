@@ -60,7 +60,7 @@ export async function notify(env, to, message, except) {
     message = { title: message.title.slice(0, 200), body: message.body?.slice(0, 500) ?? null, url: message.url };
     await d.insert("notifications", emails.map((email) => ({ email, ...message })));
     if (!env.VAPID_PRIVATE_KEY || !env.VAPID_PUBLIC_KEY) return;
-    const subs = await d.get(`push_subscriptions?select=endpoint,p256dh,auth&email=in.(${emails.map((e) => `"${e}"`).join(",")})`);
+    const subs = await d.get(`push_subscriptions?select=endpoint,p256dh,auth&email=in.(${emails.map((e) => encodeURIComponent(`"${e.replace(/["\\]/g, "\\$&")}"`)).join(",")})`);
     await Promise.all(
       subs.map(async (s) => {
         const r = await fetch(s.endpoint, {

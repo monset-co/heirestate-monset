@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, SkeletonRows } from "../motion";
 import { Empty, ErrorNote, card } from "../ui";
+import { when } from "../crm";
 
 // field names as people say them
 const NAMES = {
@@ -21,7 +22,6 @@ const show = (v) => {
   const s = String(v);
   return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 };
-const when = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
 
 // The activity log for one record (and, with `also`, its children, e.g. a listing's photos), or for
 // a lead with its notes and reminders: who changed what, newest first.
@@ -70,7 +70,7 @@ export default function Activity({ entity, id, also, lead }) {
               <LiveLi key={r.id} i={i} className="px-4 py-3 text-sm">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-medium text-fg">{r.user_email ?? (r.entity === "leads" ? "Website form" : "The system")}</span>
-                  <time dateTime={r.at} className="text-xs text-muted tabular-nums">{when.format(new Date(r.at))}</time>
+                  <time dateTime={r.at} className="text-xs text-muted tabular-nums">{when(r.at)}</time>
                 </div>
                 <div className="text-charcoal">{what(r)}</div>
               </LiveLi>

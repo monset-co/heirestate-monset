@@ -70,16 +70,17 @@ export async function webhook(req, env) {
   const d = db(env);
 
   for (const m of messages) {
-    const [old] = await d.get(`wa_threads?select=id,unread&wa_id=eq.${q(m.wa_id)}`);
-    const [thread] = old
-      ? await d.update(`wa_threads?id=eq.${old.id}`, { ...(m.name && { name: m.name }), unread: old.unread + 1, last_message_at: m.at, last_inbound_at: m.at })
-      : await d.insert("wa_threads", { wa_id: m.wa_id, name: m.name, unread: 1, last_message_at: m.at, last_inbound_at: m.at });
-    // a retried webhook repeats wa_message_id: ignored
+    let [thread] = await d.get(`wa_threads?select=id,name,unread,last_inbound_at&wa_id=eq.${q(m.wa_id)}`);
+    thread ??= (await d.insert("wa_threads", { wa_id: m.wa_id, name: m.name, unread: 0, last_message_at: m.at, last_inbound_at: m.at }))[0];
+    // a retried webhook repeats wa_message_id: ignored, and the thread isn't counted again
     const [saved] = await d.call(`wa_messages?on_conflict=wa_message_id`, {
       method: "POST",
       headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
       body: JSON.stringify({ thread_id: thread.id, wa_message_id: m.wa_message_id, direction: "in", type: m.type, body: m.body, media_id: m.media_id, media_name: m.media_name, created_at: m.at }),
     });
+    // a late message never moves the thread's times backwards (that would close the reply window)
+    const newer = !thread.last_inbound_at || Date.parse(m.at) >= Date.parse(thread.last_inbound_at);
+    if (saved) [thread] = await d.update(`wa_threads?id=eq.${thread.id}`, { ...(m.name && { name: m.name }), unread: thread.unread + 1, ...(newer && { last_message_at: m.at, last_inbound_at: m.at }) });
     // everyone, once per message (a retried webhook saves nothing, so says nothing)
     if (saved) await notify(env, null, { title: `WhatsApp: ${thread.name ?? `+${m.wa_id}`}`, body: m.body?.slice(0, 200) || "Sent a photo or file", url: `/whatsapp/${thread.id}` });
   }

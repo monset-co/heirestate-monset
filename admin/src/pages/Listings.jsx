@@ -8,6 +8,8 @@ import { STATUSES, TYPES, price } from "../../../src/listings/types.js";
 import { shape, check } from "../../../src/listings/rules.js";
 import { order, projects } from "../../../src/projects.js";
 
+const covers = new Map(); // storage key → { url, until }
+
 export default function Listings() {
   const navigate = useNavigate();
   const [list, setList] = useState(null);
@@ -22,10 +24,12 @@ export default function Listings() {
     run(supabase.from("listings").select("*, listing_photos (storage_key, sort, id)").order("updated_at", { ascending: false })).then(async (ls) => {
       // each listing's cover, the first of its photos, signed for an hour (the bucket is private)
       const first = (l) => [...l.listing_photos].sort((a, b) => a.sort - b.sort || a.id - b.id)[0]?.storage_key;
-      const keys = ls.map(first).filter(Boolean);
+      // links kept while they're good, so a cover's address stays the same and the browser keeps the
+      // image instead of downloading it again on every visit
+      const keys = ls.map(first).filter((k) => k && !(covers.get(k)?.until > Date.now() + 60e3));
       const signed = keys.length ? await run(supabase.storage.from(PHOTOS).createSignedUrls(keys, 3600)) : [];
-      const url = Object.fromEntries(signed.map((x) => [x.path, x.signedUrl]));
-      setList(ls.map((l) => ({ ...l, cover: url[first(l)] })));
+      for (const x of signed) covers.set(x.path, { url: x.signedUrl, until: Date.now() + 3600e3 });
+      setList(ls.map((l) => ({ ...l, cover: covers.get(first(l))?.url })));
     }, (e) => setError(e.message));
   }, []);
 

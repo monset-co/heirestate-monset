@@ -8,6 +8,7 @@
 // which the admin's can't give it: an iframe can't send the sign-in header, so it carries a
 // 10-minute ticket that read() signs for that one message.
 import { access, sign, unsign } from "./google.js";
+import { unb64u } from "./push.js";
 
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const json = (data) => Response.json(data, { headers: { "Cache-Control": "no-store" } });
@@ -75,7 +76,7 @@ export async function view(env, id, url) {
     {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
-        "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; font-src https: data:; img-src ${images}; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-popups allow-popups-to-escape-sandbox`,
+        "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; font-src ${images}; img-src ${images}; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-popups allow-popups-to-escape-sandbox`,
         "Cache-Control": "no-store",
         "Referrer-Policy": "no-referrer",
         "X-Content-Type-Options": "nosniff",
@@ -87,7 +88,7 @@ export async function view(env, id, url) {
 export async function attachment(env, id, att, name) {
   if (!/^[a-f0-9]{8,32}$/i.test(id) || !/^[\w-]{10,}$/.test(att)) return Response.json({ error: "No such file" }, { status: 400 });
   const { data } = await gmail(env, `/messages/${id}/attachments/${att}`);
-  const bytes = Uint8Array.from(atob(data.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const bytes = unb64u(data);
   const safe = (name ?? "attachment").replace(/[^\w.\- ]+/g, "_").slice(0, 120);
   return new Response(bytes, {
     headers: {

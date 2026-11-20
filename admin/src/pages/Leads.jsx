@@ -1,11 +1,11 @@
 import { ChevronRight, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { useMe } from "../me";
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { supabase, run } from "../supabase";
-import { motion } from "motion/react";
+import { supabase, run, every } from "../supabase";
+import { m as motion } from "motion/react";
 import { Live, LiveTr, SkeletonRows, spring } from "../motion";
-import { Badge, Empty, ErrorNote, Modal, PageHeader, TabPanel, Tabs, btn, card, input, th, Select } from "../ui";
+import { Badge, Empty, ErrorNote, Modal, PageHeader, TabPanel, Tabs, btn, card, input, th, Select, useStored } from "../ui";
 import LeadForm from "./LeadForm";
 import { Chip } from "./Matches";
 import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, STAGES, TEMPS, ago, papersDue, quiet } from "../crm";
@@ -21,43 +21,40 @@ const LISTS = {
   all: ["Everyone", () => true],
 };
 
-const remembered = () => {
-  try {
-    return localStorage.getItem("leads-kind");
-  } catch {
-    return null;
-  }
-};
+let cached = null;
 
 export default function Leads() {
   const navigate = useNavigate();
   const me = useMe();
   const [params, setParams] = useSearchParams();
-  const [list, setList] = useState(null);
+  // the last list seen, at once on coming back from a lead, then refreshed underneath
+  const [list, setList] = useState(cached);
   const [error, setError] = useState("");
   const [text, setText] = useState("");
   const stage = params.get("stage") ?? "";
   const listKey = LISTS[params.get("list")] ? params.get("list") : "open";
   const site = params.get("site") ?? "";
   // the tab in the address, else the one used last on this device
-  const kind = CATEGORIES[params.get("kind")] ? params.get("kind") : CATEGORIES[remembered()] ? remembered() : "pre-selling";
+  const [lastKind, setLastKind] = useStored("leads-kind", ""); // the tab used last on this device
+  const kind = CATEGORIES[params.get("kind")] ? params.get("kind") : CATEGORIES[lastKind] ? lastKind : "pre-selling";
   const [adding, setAdding] = useState(false);
   const [filters, setFilters] = useState(false); // phones: the list, stage and site pickers, folded away
   const filtered = (listKey !== "open") + !!stage + !!site;
 
   useEffect(() => {
     Promise.all([
-      run(supabase.from("leads").select("id, name, email, mobile, interest, category, looking_to, property_types, areas, buildings, budget_max, budget, source_site, stage, temperature, reserved_at, agent_id, created_at, agent:admin_users(name), listing:listings(title)").order("created_at", { ascending: false })),
-      run(supabase.from("lead_overview").select("*")),
+      every(() => supabase.from("leads").select("id, name, email, mobile, interest, category, looking_to, property_types, areas, buildings, budget_max, budget, source_site, stage, temperature, reserved_at, agent_id, created_at, agent:admin_users(name), listing:listings(title)").order("created_at", { ascending: false }).order("id")),
+      every(() => supabase.from("lead_overview").select("*").order("id")),
     ]).then(([leads, overview]) => {
       const o = new Map(overview.map((r) => [r.id, r]));
-      setList(leads.map((l) => ({ ...l, ...o.get(l.id) })));
+      setList((cached = leads.map((l) => ({ ...l, ...o.get(l.id) }))));
     }, (e) => setError(e.message));
   }, []);
 
   // ponytail: every lead loaded and filtered in the browser; move the search to SQL past a few thousand
+  const typed = useDeferredValue(text); // typing stays quick: the filtering catches up a beat behind
   const shown = useMemo(() => {
-    const q = text.trim().toLowerCase();
+    const q = typed.trim().toLowerCase();
     return (list ?? []).filter(
       (l) =>
         l.category === kind &&
@@ -66,7 +63,7 @@ export default function Leads() {
         (!site || l.source_site === site) &&
         (!q || [l.name, l.email, l.mobile, l.interest, l.listing?.title, ...l.property_types, ...l.areas, ...l.buildings].some((v) => v?.toLowerCase().includes(q)))
     );
-  }, [list, text, stage, site, listKey, me, kind]);
+  }, [list, typed, stage, site, listKey, me, kind]);
   const set = (k) => (e) => setParams((p) => (e.target.value ? p.set(k, e.target.value) : p.delete(k), p), { replace: true });
 
   return (
@@ -83,11 +80,7 @@ export default function Leads() {
           items={Object.entries(CATEGORIES).map(([id, t]) => ({ id, title: list ? `${t} ${list.filter((l) => l.category === id && OPEN.includes(l.stage)).length}` : t }))}
           value={kind}
           onChange={(k) => {
-            try {
-              localStorage.setItem("leads-kind", k);
-            } catch {
-              /* private mode: the tab just isn't remembered */
-            }
+            setLastKind(k);
             setParams((p) => (p.set("kind", k), p), { replace: true });
           }}
         />

@@ -126,11 +126,11 @@ export default function FilesTab({ leadId, lead, onChecked }) {
   }
 
   async function view(f, present = false) {
-    const kind = kindOf(f.file_name);
-    // a client's papers are personal data: say so before one leaves for Microsoft's servers
-    if (kind === "office" && !(await ask({ title: "Open in Microsoft's viewer?", body: "Word, Excel and PowerPoint files open in Microsoft's Office viewer, which fetches the file through a link that lasts 10 minutes.", yes: "Open it" }))) return;
+    // a client's papers are personal data (the Data Privacy Act), so Word, Excel and PowerPoint
+    // files download instead of going to Microsoft's online viewer; the team Library still uses it
+    const kind = kindOf(f.file_name) === "office" ? null : kindOf(f.file_name);
     try {
-      const url = await signed(f, kind === "office" ? 600 : 300);
+      const url = await signed(f);
       if (kind) setOpen({ file: f, url, present });
       else location.href = `${url}&download=${encodeURIComponent(f.file_name)}`;
     } catch (err) {

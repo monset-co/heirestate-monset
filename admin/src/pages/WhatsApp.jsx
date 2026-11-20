@@ -343,7 +343,12 @@ function LeadLink({ thread, onChange }) {
     try {
       const name = (thread.name ?? phone(thread.wa_id)).slice(0, 100).padEnd(2, "?");
       const lead = await run(supabase.from("leads").insert({ source_site: "whatsapp", name, mobile: phone(thread.wa_id), interest: "WhatsApp inquiry" }).select("id, name, agent_id").single());
-      await run(supabase.from("wa_threads").update({ lead_id: lead.id }).eq("id", thread.id));
+      try {
+        await run(supabase.from("wa_threads").update({ lead_id: lead.id }).eq("id", thread.id));
+      } catch (err) {
+        await supabase.from("leads").delete().eq("id", lead.id); // not left half-made: a retry won't make two
+        throw err;
+      }
       await run(supabase.from("reminders").insert({ lead_id: lead.id, agent_id: lead.agent_id, due_at: new Date(Date.now() + 36e5).toISOString(), body: "Call them back: they wrote on WhatsApp" }));
       onChange({ id: thread.id, lead_id: lead.id, lead: { id: lead.id, name: lead.name } });
       toast("Lead made, with a reminder to call them within the hour", { action: { label: "Open", run: () => navigate(`/leads/${lead.id}`) } });

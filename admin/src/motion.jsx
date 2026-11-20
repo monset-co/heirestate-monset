@@ -1,7 +1,7 @@
 // Motion for the admin, from the Monset dashboard (dashboard-monset/src/components/motion.tsx):
 // a snappy spring for position and short fades, rows that arrive and leave instead of popping,
 // skeleton rows, and toasts.
-import { AnimatePresence, animate, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, animate, m as motion, useReducedMotion } from "motion/react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 export const spring = { type: "spring", stiffness: 500, damping: 38, mass: 0.9 };
@@ -25,7 +25,6 @@ function useDelay(i) {
 }
 export const LiveLi = ({ i, ...props }) => <motion.li {...row(useDelay(i))} {...props} />;
 export const LiveTr = ({ i, ...props }) => <motion.tr {...row(useDelay(i))} {...props} />;
-export const LiveDiv = ({ i, ...props }) => <motion.div {...row(useDelay(i))} {...props} />;
 
 export function Live({ children }) {
   const [born] = useState(() => performance.now());

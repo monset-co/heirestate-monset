@@ -15,7 +15,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { db, whoIs } from "./supabase.js";
 import { mail } from "./mail.js";
-import { newCode, hash, check, canSend, TTL, TRIES } from "./code.js";
+import { newCode, hash, check, canSend, TTL, TRIES, SENDS_PER_HOUR } from "./code.js";
 import * as whatsapp from "./whatsapp.js";
 import * as google from "./google.js";
 import * as gmail from "./gmail.js";
@@ -29,15 +29,25 @@ async function sendCode(env, me) {
   if (me.verified) return json({ verified: true });
   const [row] = await db(env).get(`second_factor?session_id=eq.${q(me.session)}`);
   if (!canSend(row, Date.now())) return fail("A code was sent less than a minute ago. Check your email, or try again shortly.", 429);
+  // codes sent to this email in the last hour, over every session: a stolen password can't buy
+  // endless fresh tries, or flood the inbox, by signing in again and again
+  const hour = new Date(Date.now() - 36e5).toISOString();
+  const recent = await db(env).get(`second_factor?select=sends&email=eq.${q(me.email)}&sent_at=gt.${q(hour)}`).catch(() => []);
+  if (recent.reduce((n, r) => n + (r.sends ?? 0), 0) >= SENDS_PER_HOUR) return fail("Too many codes this hour. Wait a while, then try again.", 429);
   const code = newCode();
-  await db(env).upsert("second_factor", {
+  const fresh = {
     session_id: me.session,
     email: me.email,
     code_hash: await hash(me.session, code),
     expires_at: new Date(Date.now() + TTL).toISOString(),
     attempts: 0,
     sent_at: new Date().toISOString(),
-  });
+  };
+  // this session's sends in the hour so far, plus this one
+  const sends = (row?.sent_at && row.sent_at > hour ? (row.sends ?? 0) : 0) + 1;
+  await db(env)
+    .upsert("second_factor", { ...fresh, sends })
+    .catch((e) => (/sends/.test(e.message) ? db(env).upsert("second_factor", fresh) : Promise.reject(e))); // before the migration: no count
   await mail(env, {
     to: me.email,
     subject: `${code} is your Heir Estates admin code`,
@@ -49,16 +59,29 @@ async function sendCode(env, me) {
 async function verifyCode(req, env, me) {
   if (me.verified) return json({ verified: true });
   const { code } = (await req.json().catch(() => ({}))) ?? {};
-  const [row] = await db(env).get(`second_factor?session_id=eq.${q(me.session)}`);
-  const result = await check(row, me.session, code ?? "", Date.now());
   const where = `second_factor?session_id=eq.${q(me.session)}`;
+  let [row] = await db(env).get(where);
+  const early = await check(row, me.session, "", Date.now()); // expired or locked: no try to spend
+  if (early === "expired" || early === "locked") return fail(early === "locked" ? "Too many tries. Send a new code." : "That code has expired. Send a new one.");
+  // claim the try in one statement before comparing, so guesses sent at once can't all see "no
+  // tries yet" (claim_code_try, supabase/migrations); its row has the try counted already
+  let counted = true;
+  try {
+    [row] = await db(env).call("rpc/claim_code_try", { method: "POST", body: JSON.stringify({ sid: me.session }) });
+    if (!row) return fail("Too many tries. Send a new code.");
+  } catch (e) {
+    if (!/: 404 /.test(e.message)) throw e;
+    counted = false; // the migration isn't in yet: the old way, until it is
+  }
+  const tried = counted ? { ...row, attempts: row.attempts - 1 } : row;
+  const result = await check(tried, me.session, code ?? "", Date.now());
   if (result === "ok") {
     await db(env).update(where, { verified_at: new Date().toISOString(), code_hash: null });
     return json({ verified: true });
   }
   if (result === "wrong") {
-    await db(env).update(where, { attempts: row.attempts + 1 });
-    const left = TRIES - row.attempts - 1;
+    if (!counted) await db(env).update(where, { attempts: row.attempts + 1 });
+    const left = TRIES - tried.attempts - 1;
     return fail(left > 0 ? `That code isn't right. ${left} ${left === 1 ? "try" : "tries"} left.` : "That code isn't right. Send a new one.");
   }
   return fail(result === "locked" ? "Too many tries. Send a new code." : "That code has expired. Send a new one.");
@@ -132,14 +155,21 @@ async function remind(env) {
   if (!due.length) return;
   const everyone = (await db(env).get("admin_users?select=email&active=eq.true")).map((a) => a.email);
   for (const r of due) {
+    // claimed first (only if still unsent), so a failure later can't make it go out every 15
+    // minutes, and two overlapping runs can't both send it; one failing doesn't stop the rest
+    const [claimed] = await db(env).update(`reminders?id=eq.${r.id}&emailed_at=is.null`, { emailed_at: new Date().toISOString() });
+    if (!claimed) continue;
     const to = r.agent?.email ?? r.lead?.agent?.email ?? everyone;
-    await mail(env, {
-      to,
-      subject: `Follow up: ${r.lead?.name ?? "a lead"}`,
-      text: `${r.body}\n\nLead: ${r.lead?.name ?? ""}\n${env.ADMIN_URL}/leads/${r.lead_id}?tab=Reminders`,
-    });
+    try {
+      await mail(env, {
+        to,
+        subject: `Follow up: ${r.lead?.name ?? "a lead"}`,
+        text: `${r.body}\n\nLead: ${r.lead?.name ?? ""}\n${env.ADMIN_URL}/leads/${r.lead_id}?tab=Reminders`,
+      });
+    } catch (e) {
+      console.error("reminder email", r.id, e);
+    }
     await notify(env, to, { title: `Follow up: ${r.lead?.name ?? "a lead"}`, body: r.body, url: `/leads/${r.lead_id}?tab=Reminders` });
-    await db(env).update(`reminders?id=eq.${r.id}`, { emailed_at: new Date().toISOString() });
   }
 }
 

@@ -7,7 +7,8 @@ import { useEffect, useRef } from "react";
 
 const CEBU = [10.3157, 123.8854];
 // the status colours the inventory's badges use
-export const PIN = { open: "#2f6b4f", pre: "#b08a3e", held: "#c9a24a", gone: "#8a8f98" };
+import { PIN } from "./crm";
+export { PIN };
 
 export default function MapView({ pins = [], ring, movable, onMove, onPin, className = "h-80", zoom = 13 }) {
   const box = useRef(null);

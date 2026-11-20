@@ -4,8 +4,8 @@
 // back behind. Each page rises in on navigation.
 import Bell from "./Bell";
 import { BookOpen, Boxes, FolderOpen, Presentation, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, Plus, Sparkles, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { AnimatePresence, m as motion } from "motion/react";
+import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useInstall } from "./install";
 import { supabase } from "./supabase";
@@ -56,6 +56,19 @@ export const nav = groups.flatMap((g) => g.items);
 
 const signOut = () => supabase.auth.signOut();
 
+// tablet and up (Tailwind's md): the rail; below, the phone's header and tab bar. Only one is
+// mounted, so there's one bell (one query, one live channel) and no hidden rail measuring itself.
+const WIDE = "(min-width: 768px)";
+const useWide = () =>
+  useSyncExternalStore(
+    (cb) => {
+      const m = matchMedia(WIDE);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => matchMedia(WIDE).matches
+  );
+
 // "Install app": the browser's own prompt where there is one (Chrome, Edge, Android), otherwise
 // the steps for this device in Settings. Gone once the admin runs as an installed app.
 function InstallButton({ className }) {
@@ -90,15 +103,19 @@ export default function Shell() {
   const [more, setMore] = useState(false);
   const moreActive = !nav.some((n) => n.tab && n.to === section);
   const [slim, toggleSlim] = useSlim();
+  const wide = useWide();
 
   return (
     <div data-sheet={more ? "open" : undefined} style={{ "--rail": slim ? "72px" : "15rem" }} className="min-h-dvh transition-[background-color,grid-template-columns] duration-300 ease-[var(--ease-out)] [--tabbar-h:4rem] data-[sheet=open]:bg-navy-deep md:grid md:grid-cols-[var(--rail)_minmax(0,1fr)] md:[--tabbar-h:0px] print:block">
       <div className="app-page bg-bg md:contents">
         {/* phones: the logo and the bell; the pages are in the tab bar */}
+        {!wide && (
         <header className="on-navy sticky top-0 z-20 flex h-16 items-center justify-between gap-2 bg-side px-4 pt-[env(safe-area-inset-top)] text-cream print:hidden md:hidden">
           <Mark />
           <Bell />
         </header>
+        )}
+        {wide && (
         <Rail
           groups={groups}
           section={section}
@@ -109,6 +126,7 @@ export default function Shell() {
           install={(className) => <InstallButton className={className} />}
           signOut={signOut}
         />
+        )}
 
         <main className="mx-auto w-full max-w-[90rem] min-w-0 px-4 py-6 print:p-0 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+5.5rem)] md:px-10 md:py-10">
           <div key={pathname} className="page-in">
@@ -120,7 +138,7 @@ export default function Shell() {
       </div>
 
       {/* Phone tab bar: the active tab grows into a pill and its label slides out */}
-      <nav aria-label="Main" className="on-navy fixed inset-x-0 bottom-0 z-30 print:hidden border-t border-cream/10 bg-side/95 pb-[env(safe-area-inset-bottom)] text-cream backdrop-blur md:hidden">
+      <nav aria-label="Main" className="on-navy fixed inset-x-0 bottom-0 z-30 print:hidden border-t border-cream/10 bg-side pb-[env(safe-area-inset-bottom)] text-cream md:hidden">
         <div className="flex h-16 items-center gap-1 px-2">
           {[...nav.filter((n) => n.tab), { to: "#more", label: "More", icon: Menu }].map(({ to, label, icon: Icon }) => {
             const isMore = to === "#more";
@@ -225,7 +243,7 @@ function QuickRing({ items }) {
   return (
     <div className="print:hidden md:hidden">
       <AnimatePresence>
-        {open && <motion.div key="veil" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-navy-deep/45 backdrop-blur-[2px]" aria-hidden />}
+        {open && <motion.div key="veil" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-navy-deep/50" aria-hidden />}
       </AnimatePresence>
       <div className="fixed right-5 bottom-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+1rem)] z-40 size-14">
         <AnimatePresence>

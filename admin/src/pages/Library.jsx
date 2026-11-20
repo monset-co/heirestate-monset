@@ -54,14 +54,17 @@ export default function Library({ shelf }) {
 
   useEffect(() => {
     setFiles(null);
-    run(supabase.from("library_files").select("*").eq("shelf", shelf).order("created_at", { ascending: false })).then(setFiles, (e) => setError(e.message));
+    let live = true; // switching shelves fast: the old shelf's answer is dropped
+    run(supabase.from("library_files").select("*").eq("shelf", shelf).order("created_at", { ascending: false })).then((r) => live && setFiles(r), (e) => live && setError(e.message));
+    return () => (live = false);
   }, [shelf]);
 
   async function upload(list) {
+    const files = [...list]; // a copy: the picker's list empties as soon as it's reset
     setError("");
     let done = 0;
-    for (const [i, file] of [...list].entries()) {
-      setBusy({ at: i, of: list.length });
+    for (const [i, file] of files.entries()) {
+      setBusy({ at: i, of: files.length });
       try {
         const e = ext(file.name);
         if (!s.types.includes(e)) throw new Error(`${file.name}: ${s.title} takes ${s.say} files`);
@@ -70,7 +73,7 @@ export default function Library({ shelf }) {
         await run(supabase.storage.from(BUCKET).upload(path, file, { contentType: MIME[e] }));
         try {
           const row = await run(supabase.from("library_files").insert({ shelf, file_path: path, file_name: file.name.slice(0, 200), size: file.size }).select().single());
-          setFiles((fs) => [row, ...fs]);
+          setFiles((fs) => [row, ...(fs ?? [])]);
           done++;
         } catch (err) {
           await supabase.storage.from(BUCKET).remove([path]); // no file without its row
@@ -108,8 +111,9 @@ export default function Library({ shelf }) {
   async function remove(f) {
     if (!(await ask({ title: `Delete “${f.file_name}”?`, body: "It's gone for the whole team. It can't be undone.", yes: "Delete", danger: true }))) return;
     try {
-      await run(supabase.storage.from(BUCKET).remove([f.file_path]));
+      // the row first: if the file then can't go, it's only an unseen leftover, not a broken entry
       await run(supabase.from("library_files").delete().eq("id", f.id));
+      await run(supabase.storage.from(BUCKET).remove([f.file_path]));
       setFiles((fs) => fs.filter((x) => x.id !== f.id));
       toast("File deleted");
     } catch (err) {

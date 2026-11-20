@@ -3,7 +3,7 @@
 // HTML shows in a sandbox with no scripts, and its remote images (which tell the sender it was
 // opened) stay blocked until asked for. Replying happens in Gmail.
 import { ArrowLeft, ExternalLink, Image, Inbox, Paperclip, Search, Send, UserPlus } from "lucide-react";
-import { motion } from "motion/react";
+import { m as motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api } from "../api";
@@ -53,11 +53,15 @@ export default function Email() {
     requestAnimationFrame(() => scrollTo(0, listAt.current));
   };
 
+  // each load numbered: switching Inbox and Sent fast, an older answer that lands last is ignored
+  const asked = useRef(0);
   async function load(page) {
+    const n = ++asked.current;
     setError("");
     if (!page) setList(null);
     try {
       const r = await api(`google/mail?box=${box}&q=${encodeURIComponent(search)}${page ? `&page=${encodeURIComponent(page)}` : ""}`);
+      if (n !== asked.current) return;
       setList((l) => (page ? [...(l ?? []), ...r.messages] : r.messages));
       setNext(r.next);
       // who among these is a lead: for a sent email, whom it went to
@@ -67,6 +71,7 @@ export default function Email() {
         setLeads((all) => ({ ...all, ...Object.fromEntries(rows.map((l) => [l.email, l])) }));
       }
     } catch (e) {
+      if (n !== asked.current) return;
       setError(e.message);
       if (!page) setList([]);
     }

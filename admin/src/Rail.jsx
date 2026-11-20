@@ -4,34 +4,20 @@
 // turned on its side. The bulge is the rail's own navy, merged into it by an SVG goo filter; its
 // text sits on an unfiltered copy so it stays crisp.
 import { ChevronDown, ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
-import { motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
+import { m as motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import Bell from "./Bell";
 import { spring } from "./motion";
+import { useStored } from "./ui";
 
 const GOO = { stiffness: 240, damping: 20, mass: 1.2 }; // Motionbook spring.gooey
 const SLIM = 72; // px, the folded rail
 const NEAR = 28; // px: how close to an icon the pointer must be for its bulge
 
 export function useSlim() {
-  const [slim, set] = useState(() => {
-    try {
-      return localStorage.getItem("rail-slim") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggle = () =>
-    set((s) => {
-      try {
-        localStorage.setItem("rail-slim", s ? "0" : "1");
-      } catch {
-        /* private window: it just isn't remembered */
-      }
-      return !s;
-    });
-  return [slim, toggle];
+  const [slim, set] = useStored("rail-slim", "0");
+  return [slim === "1", () => set(slim === "1" ? "0" : "1")];
 }
 
 export default function Rail({ groups, section, slim, onToggle, me, mark, install, signOut }) {
@@ -53,9 +39,17 @@ export default function Rail({ groups, section, slim, onToggle, me, mark, instal
   const fade = `linear-gradient(to bottom, transparent 0, #000 ${edge.up ? 28 : 0}px, #000 calc(100% - ${edge.down ? 36 : 0}px), transparent 100%)`;
   const [near, setNear] = useState(null); // { to, label, y } the bulge is out for
 
-  // the item nearest the pointer, by its centre, if near enough
+  // the item nearest the pointer, by its centre, if near enough; once a frame at most
+  const frame = useRef(0);
   const track = (e) => {
-    if (!slim) return;
+    if (!slim || frame.current) return;
+    const { clientY } = e;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      nearest(clientY);
+    });
+  };
+  const nearest = (clientY) => {
     const top = aside.current.getBoundingClientRect().top;
     let best = null;
     for (const g of groups)
@@ -63,7 +57,7 @@ export default function Rail({ groups, section, slim, onToggle, me, mark, instal
         const el = links.current[it.to];
         if (!el) continue;
         const b = el.getBoundingClientRect();
-        const d = Math.abs(e.clientY - (b.top + b.height / 2));
+        const d = Math.abs(clientY - (b.top + b.height / 2));
         if (d <= NEAR && (!best || d < best.d)) best = { to: it.to, label: it.label, y: b.top + b.height / 2 - top, d };
       }
     if (best?.to !== near?.to || (best && Math.abs(best.y - near.y) > 1)) setNear(best);

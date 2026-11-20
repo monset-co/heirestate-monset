@@ -52,4 +52,6 @@ test("a booking's notification reminders, each due in one 15-minute window", () 
   const due = dueReminders(items, [{ method: "popup", minutes: 60 }], at - 15 * 60e3, at);
   assert.deepEqual(due.map((d) => [d.event.id, d.minutes]), [["2026-11-20T10:30:00+08:00", 30], ["2026-11-20T10:50:00+08:00", 60], ["allday", 840]]);
   assert.equal(dueReminders(items, [], at, at + 15 * 60e3).length, 1, "the next window has the 10:40 one only");
+  const allDayDefault = [{ id: "d", start: { date: "2026-11-21" }, reminders: { useDefault: true } }];
+  assert.equal(dueReminders(allDayDefault, [{ method: "popup", minutes: 30 }], Date.parse("2026-11-20T23:15:00+08:00"), Date.parse("2026-11-20T23:30:00+08:00")).length, 0, "no 11:30 PM push for an all-day booking");
 });

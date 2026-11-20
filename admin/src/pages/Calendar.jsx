@@ -6,23 +6,34 @@
 // guests get Google's invitations and updates from the connected Gmail. Opened from a lead
 // (?lead=id), the booking is filled in from them.
 import { Bell, CalendarPlus, ChevronLeft, ChevronRight, ExternalLink, MapPin, Pencil, Plus, Repeat, Users, X } from "lucide-react";
-import { motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { m as motion } from "motion/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api } from "../api";
-import { supabase, run } from "../supabase";
+import { supabase, run, every } from "../supabase";
 import { Skeleton, spring, toast } from "../motion";
 import { Badge, Drawer, Empty, ErrorNote, Field, Modal, PageHeader, btn, btnDanger, btnGhost, card, input, Select, ask } from "../ui";
 
 const TZ = "Asia/Manila";
-const fmt = (o) => new Intl.DateTimeFormat("en-PH", { timeZone: TZ, ...o });
+// formatters are costly to make and the views ask for hundreds: each kind is made once
+const formats = new Map();
+const fmt = (o) => {
+  const k = JSON.stringify(o);
+  if (!formats.has(k)) formats.set(k, new Intl.DateTimeFormat("en-PH", { timeZone: TZ, ...o }));
+  return formats.get(k);
+};
 const time = (iso) => fmt({ hour: "numeric", minute: "2-digit" }).format(new Date(iso));
 // Manila calendar days as "YYYY-MM-DD" keys, counted in UTC so no device clock shifts them
 const keyOf = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(d);
 const addDays = (key, n) => new Date(Date.parse(`${key}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 864e5);
 const weekday = (key) => new Date(`${key}T00:00:00Z`).getUTCDay();
-const label = (key, o) => new Date(`${key}T00:00:00Z`).toLocaleDateString("en-PH", { timeZone: "UTC", ...o });
+const dayFormats = new Map();
+const label = (key, o) => {
+  const k = JSON.stringify(o);
+  if (!dayFormats.has(k)) dayFormats.set(k, new Intl.DateTimeFormat("en-PH", { timeZone: "UTC", ...o }));
+  return dayFormats.get(k).format(new Date(`${key}T00:00:00Z`));
+};
 // an event's Manila day and minute of the day
 function at(iso, allDay) {
   if (allDay) return { key: iso.slice(0, 10), min: 0 };
@@ -90,8 +101,14 @@ export default function Calendar() {
   const [day, setDay] = useState(null); // the day open in the side panel
   const [dayEvents, setDayEvents] = useState(null); // its bookings, when it's outside the view's window
   const [from, to] = range(view, cursor);
+  useEffect(() => () => (knownRows = null), []); // the form's suggestions are fetched afresh next visit
 
-  const load = () => api(`google/events?from=${from}&to=${to}`).then((r) => setEvents(r.events), (e) => setError(e.message));
+  // each load numbered: paging fast, an older answer that lands last is ignored
+  const asked = useRef({ view: 0, day: 0 });
+  const load = () => {
+    const n = ++asked.current.view;
+    return api(`google/events?from=${from}&to=${to}`).then((r) => n === asked.current.view && setEvents(r.events), (e) => setError(e.message));
+  };
   useEffect(() => {
     if (google?.email) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,8 +116,13 @@ export default function Calendar() {
 
   // the side panel's day, fetched on its own when the view doesn't hold it
   const inView = day && day >= from && day <= to;
-  const loadDay = () => (day && !inView ? api(`google/events?from=${day}&to=${day}`).then((r) => setDayEvents(r.events), (e) => setError(e.message)) : setDayEvents(null));
+  const loadDay = () => {
+    const n = ++asked.current.day;
+    if (!day || inView) return setDayEvents(null);
+    api(`google/events?from=${day}&to=${day}`).then((r) => n === asked.current.day && setDayEvents(r.events), (e) => setError(e.message));
+  };
   useEffect(() => {
+    setDayEvents(null); // a new day: its skeleton, not the last day's bookings
     loadDay();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, inView]);
@@ -191,12 +213,16 @@ export default function Calendar() {
     }
   }
 
-  // each day's bookings, in order
+  // each day's bookings, in order; one that runs over several days is on each of them (an all-day
+  // booking's end is the day after its last; a timed one ending at midnight ends the day before)
   const byDay = useMemo(() => {
     const m = new Map();
     for (const ev of [...(events ?? []), ...(dayEvents ?? [])]) {
-      const { key } = at(ev.start, ev.allDay);
-      if (!(m.get(key) ?? []).some((x) => x.id === ev.id)) m.set(key, [...(m.get(key) ?? []), ev]);
+      const first = at(ev.start, ev.allDay).key;
+      const end = at(ev.end, ev.allDay);
+      const last = ev.allDay || (end.min === 0 && end.key > first) ? addDays(end.key, -1) : end.key;
+      for (let d = first, i = 0; d <= last && i < 400; d = addDays(d, 1), i++)
+        if (!(m.get(d) ?? []).some((x) => x.id === ev.id)) m.set(d, [...(m.get(d) ?? []), ev]);
     }
     return m;
   }, [events, dayEvents]);
@@ -662,7 +688,7 @@ function Booking({ ev, onCancel, onEdit }) {
         {ev.reminders === null
           ? "The calendar's default reminders"
           : ev.reminders.length
-            ? ev.reminders.map((r) => `${r.method === "email" ? "Email" : "Notification"} ${(BEFORE.find(([m]) => m === r.minutes)?.[1] ?? `${r.minutes} minutes before`).toLowerCase()}`).join(" · ")
+            ? ev.reminders.map((r) => `${r.method === "email" ? "Email" : "Notification"} ${beforeName(r.minutes, ev.allDay).toLowerCase()}`).join(" · ")
             : "No reminders"}
       </p>
       {ev.notes && <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-muted">{ev.notes}</p>}
@@ -690,6 +716,10 @@ function blank(key = addDays(keyOf(new Date()), 1), min = 600) {
 }
 // a new booking's reminders: a phone notification half an hour before, an email the day before
 const NEW_REMINDERS = [{ method: "popup", minutes: 30 }, { method: "email", minutes: 1440 }];
+// an all-day one counts back from its midnight: 900 minutes is 9 AM the day before
+const ALL_DAY_REMINDERS = [{ method: "popup", minutes: 900 }, { method: "email", minutes: 900 }];
+const ALL_DAY_BEFORE = [[0, "At midnight, as it starts"], [540, "3 PM the day before"], [900, "9 AM the day before"], [2340, "9 AM two days before"], [9540, "9 AM a week before"]];
+const beforeName = (m, allDay) => ((allDay ? ALL_DAY_BEFORE : BEFORE).find(([x]) => x === m)?.[1] ?? `${m} minutes before`);
 const BEFORE = [[0, "At the start"], [5, "5 minutes before"], [10, "10 minutes before"], [15, "15 minutes before"], [30, "30 minutes before"], [60, "1 hour before"], [120, "2 hours before"], [180, "3 hours before"], [1440, "1 day before"], [2880, "2 days before"], [10080, "1 week before"]];
 
 // a booking as the form holds it; an all-day one's end is its last day, not Google's day after
@@ -706,6 +736,7 @@ function formOf(ev) {
     color: ev.color ?? "",
     reminders: ev.reminders, // null: the calendar's own
     recurring: ev.recurring,
+    lead_id: ev.lead_id,
   };
 }
 
@@ -722,7 +753,7 @@ function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
   // a new start (day or time) keeps the booking's length, as Google does
   function setStart(v) {
     if (!v) return;
-    onChange({ ...b, start: v, end: b.allDay ? addDays(v, Math.max(0, daysBetween(b.start, b.end))) : shift(v, len > 0 ? len : 60) });
+    onChange({ ...b, start: v, end: b.allDay ? addDays(v, Math.max(0, daysBetween(b.start, b.end) || 0)) : shift(v, len > 0 ? len : 60) });
   }
   // the times on offer: every quarter hour; a start or an end that would overlap another booking
   // says so ("busy"), so a clash is seen before it's made
@@ -736,7 +767,11 @@ function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
   function setAllDay(e) {
     const on = e.target.checked;
     const d = b.start.slice(0, 10);
-    onChange({ ...b, allDay: on, start: on ? d : `${d}T10:00`, end: on ? b.end.slice(0, 10) || d : `${d}T11:00` });
+    // an all-day booking starts at midnight: "30 minutes before" would be 11:30 the night before, so
+    // the usual reminders swap for the all-day ones (and back)
+    const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+    const reminders = on && same(b.reminders, NEW_REMINDERS) ? [...ALL_DAY_REMINDERS] : !on && same(b.reminders, ALL_DAY_REMINDERS) ? [...NEW_REMINDERS] : b.reminders;
+    onChange({ ...b, allDay: on, reminders, start: on ? d : `${d}T10:00`, end: on ? b.end.slice(0, 10) || d : `${d}T11:00` });
   }
 
   async function submit(e) {
@@ -821,7 +856,7 @@ function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
           ))}
         </div>
       </Field>
-      <Reminders value={b.reminders} onChange={(reminders) => onChange({ ...b, reminders })} />
+      <Reminders value={b.reminders} allDay={b.allDay} onChange={(reminders) => onChange({ ...b, reminders })} />
       <Field label="Notes">
         <textarea value={b.notes} onChange={set("notes")} maxLength={8000} rows={3} className={input} />
       </Field>
@@ -832,14 +867,15 @@ function BookingForm({ value: b, onChange, onDone, disabled, seen }) {
 
 // when Google reminds the connected account, a notification or an email, up to five (null: the
 // calendar's own default); the notifications are also pushed to the agents (worker pushReminders)
-function Reminders({ value, onChange }) {
+function Reminders({ value, allDay, onChange }) {
+  const list = allDay ? ALL_DAY_BEFORE : BEFORE;
   const set = (i, k) => (e) => onChange(value.map((r, j) => (j === i ? { ...r, [k]: k === "minutes" ? Number(e.target.value) : e.target.value } : r)));
   return (
     <Field label="Reminders" hint="A notification reminder also reaches the agents on their phones and computers: whoever booked it, the lead's agent and any team member invited. Email reminders go to the business Gmail. Clients get reminders from their own calendar.">
       {value === null ? (
         <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
           The calendar's default reminders.
-          <button type="button" className="underline underline-offset-2 hover:text-fg" onClick={() => onChange([...NEW_REMINDERS])}>Set them for this booking</button>
+          <button type="button" className="underline underline-offset-2 hover:text-fg" onClick={() => onChange([...(allDay ? ALL_DAY_REMINDERS : NEW_REMINDERS)])}>Set them for this booking</button>
         </p>
       ) : (
         <div className="grid gap-2">
@@ -850,7 +886,7 @@ function Reminders({ value, onChange }) {
                 <option value="email">Email</option>
               </Select>
               <Select aria-label="When" value={String(r.minutes)} onChange={set(i, "minutes")} className={`${input} min-w-0 flex-1`}>
-                {(BEFORE.some(([m]) => m === r.minutes) ? BEFORE : [...BEFORE, [r.minutes, `${r.minutes} minutes before`]]).map(([m, l]) => (
+                {(list.some(([m]) => m === r.minutes) ? list : [...list, [r.minutes, `${r.minutes} minutes before`]]).map(([m, l]) => (
                   <option key={m} value={String(m)}>{l}</option>
                 ))}
               </Select>
@@ -861,7 +897,7 @@ function Reminders({ value, onChange }) {
           ))}
           <div className="flex flex-wrap gap-3 text-sm">
             {value.length < 5 && (
-              <button type="button" className="flex items-center gap-1 text-muted hover:text-fg" onClick={() => onChange([...value, { method: "popup", minutes: 10 }])}>
+              <button type="button" className="flex items-center gap-1 text-muted hover:text-fg" onClick={() => onChange([...value, { method: "popup", minutes: allDay ? 900 : 10 }])}>
                 <Plus className="size-4" aria-hidden /> Add a reminder
               </button>
             )}
@@ -878,18 +914,23 @@ const TITLES = ["Viewing:", "Tripping:", "Meeting:", "Call:", "Contract signing:
 
 // what the form can suggest: people (leads with an email, the team, guests already on the
 // calendar) and places (listings, inventory buildings and locations), loaded once per form
+// fetched once while the page is open, not on every form: the lists are only suggestions
+let knownRows = null;
 function useKnown(seen) {
   const [known, setKnown] = useState({ people: [], places: [] });
   useEffect(() => {
-    Promise.all([
-      run(supabase.from("leads").select("id, name, email").not("email", "is", null).order("created_at", { ascending: false }).limit(2000)),
+    let live = true;
+    knownRows ??= Promise.all([
+      every(() => supabase.from("leads").select("id, name, email").not("email", "is", null).order("created_at", { ascending: false }).order("id")),
       run(supabase.from("admin_users").select("name, email").eq("active", true)),
       run(supabase.from("listings").select("title, location")),
-      run(supabase.from("inventory").select("building, location").limit(3000)),
-    ]).then(
+      every(() => supabase.from("inventory").select("building, location").order("id")),
+    ]).catch((e) => ((knownRows = null), Promise.reject(e))); // a failure is tried again next time
+    knownRows.then(
       ([leads, team, listings, inventory]) => {
+        if (!live) return;
         const people = new Map();
-        for (const l of leads) people.set(l.email.toLowerCase(), { email: l.email.toLowerCase(), name: l.name, kind: "Lead", lead_id: l.id });
+        for (const l of leads.filter((x) => EMAIL.test(x.email.trim()))) people.set(l.email.trim().toLowerCase(), { email: l.email.trim().toLowerCase(), name: l.name, kind: "Lead", lead_id: l.id });
         for (const t of team) people.set(t.email, { email: t.email, name: t.name, kind: "Team" });
         for (const ev of seen ?? []) for (const g of ev.guests) if (!people.has(g.email)) people.set(g.email, { email: g.email, name: "", kind: "Guest before" });
         const places = new Set([...listings.flatMap((x) => [x.title, x.location]), ...inventory.flatMap((x) => [x.building, x.location])].filter(Boolean).map((x) => x.trim()));
@@ -897,6 +938,7 @@ function useKnown(seen) {
       },
       () => {} // suggestions are a nicety: the form works without them
     );
+    return () => (live = false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return known;

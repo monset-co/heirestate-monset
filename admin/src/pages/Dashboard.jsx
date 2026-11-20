@@ -1,11 +1,11 @@
 import { ArrowRight, BellRing, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { supabase, run } from "../supabase";
+import { supabase, run, every } from "../supabase";
 import { api } from "../api";
 import { useMe } from "../me";
 import { CountUp, Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Select, Tabs, btn, card, input } from "../ui";
+import { Badge, Empty, ErrorNote, Select, Tabs, btn, card, input, useStored } from "../ui";
 import { ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, ago, papersDue, quiet, when } from "../crm";
 import { LOOKING_TO, tidyMobile } from "../match";
 import { device } from "../install";
@@ -22,12 +22,12 @@ export default function Dashboard() {
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   useEffect(() => {
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
+    // the end of today in Manila, whatever the phone's own clock zone
+    const endOfToday = new Date(`${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date())}T23:59:59.999+08:00`);
     Promise.all([
-      run(supabase.from("leads").select("id, name, stage, interest, source_site, created_at, reserved_at").order("created_at", { ascending: false })),
-      run(supabase.from("lead_overview").select("id, last_contact_at, papers_verified")),
-      run(supabase.from("commissions").select("sale_date, project, listing_id, unit_code, cancelled")),
+      every(() => supabase.from("leads").select("id, name, stage, interest, source_site, created_at, reserved_at").order("created_at", { ascending: false }).order("id")),
+      every(() => supabase.from("lead_overview").select("id, last_contact_at, papers_verified").order("id")),
+      every(() => supabase.from("commissions").select("sale_date, project, listing_id, unit_code, cancelled").order("id")),
       run(supabase.from("reminders").select("id, body, due_at, lead_id, lead:leads(name)").is("done_at", null).lte("due_at", endOfToday.toISOString()).order("due_at")),
     ]).then(([leads, overview, commissions, reminders]) => {
       const o = new Map(overview.map((r) => [r.id, r]));
@@ -436,21 +436,9 @@ function NeedsYou({ leads }) {
 const ASKED = "alerts-asked";
 function TurnOnAlerts() {
   const push = usePush();
-  const [hidden, setHidden] = useState(() => {
-    try {
-      return localStorage.getItem(ASKED) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const hide = () => {
-    setHidden(true);
-    try {
-      localStorage.setItem(ASKED, "1");
-    } catch {
-      /* private window: it asks again next time */
-    }
-  };
+  const [asked, setAsked] = useStored(ASKED, "0");
+  const hidden = asked === "1";
+  const hide = () => setAsked("1");
   // iPhone and iPad take notifications only from the installed app
   const iosBrowser = !pushSupported() && device() === "ios";
   if (hidden || push.on !== false || (!push.supported && !iosBrowser) || (push.supported && Notification.permission === "denied")) return null;

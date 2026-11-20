@@ -1,7 +1,7 @@
 // The admin's building blocks, after the Monset dashboard (dashboard-monset/src/components/ui.tsx)
 // in the house's own hand: Bodoni titles, Marcellus labels, navy and gold.
 import { Check, ChevronDown, Copy, Mail, MessageCircle, Share2, X } from "lucide-react";
-import { motion } from "motion/react";
+import { m as motion } from "motion/react";
 import { Children, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "./motion";
@@ -83,7 +83,7 @@ export function Badge({ value, children }) {
 }
 
 /** Native <dialog>: Esc, focus trap and top layer for free; its motion lives in admin.css. */
-export function Modal({ open, onClose, title, children }) {
+export function Modal({ open, onClose, title, children, guard = true }) {
   const ref = useRef(null);
   // typed into since it opened: a stray tap on the backdrop, Esc or × asks before throwing it away
   const dirty = useRef(false);
@@ -97,7 +97,7 @@ export function Modal({ open, onClose, title, children }) {
     if (!open && d.open) d.close();
   }, [open]);
   async function close() {
-    if (dirty.current && !(await ask({ title: "Discard your changes?", body: "What you typed here isn't saved yet.", yes: "Discard", no: "Keep editing", danger: true }))) return;
+    if (guard && dirty.current && !(await ask({ title: "Discard your changes?", body: "What you typed here isn't saved yet.", yes: "Discard", no: "Keep editing", danger: true }))) return;
     onClose();
   }
   return (
@@ -105,8 +105,14 @@ export function Modal({ open, onClose, title, children }) {
       ref={ref}
       onClose={onClose}
       onInput={() => (dirty.current = true)}
+      // picks made by tapping (a chip, a colour, a list option) are changes too; buttons outside a
+      // form (Edit, Open, Share) aren't
+      onClickCapture={(e) => {
+        const t = e.target.closest?.("button, [role=option], [role=radio], [role=menuitem], label");
+        if (t && (t.closest("form") || t.matches("[role=option]")) && !t.matches("[type=submit]") && !(t.tagName === "BUTTON" && !t.getAttribute("type"))) dirty.current = true;
+      }}
       onCancel={(e) => {
-        if (!dirty.current) return;
+        if (!guard || !dirty.current) return;
         e.preventDefault();
         close();
       }}
@@ -176,7 +182,7 @@ export function Confirmer() {
     setQ(null);
   };
   return (
-    <Modal open={!!q} onClose={() => answer(false)} title={q?.title ?? ""}>
+    <Modal open={!!q} onClose={() => answer(false)} title={q?.title ?? ""} guard={false}>
       {q && (
         <form
           className="grid gap-5"
@@ -465,14 +471,7 @@ export function Tabs({ items, value, onChange, label }) {
 export function ShareButton({ get, label = "Share", className = btnGhost, up = false }) {
   const [menu, setMenu] = useState(null); // the message, while the fallback menu is open
   const box = useRef(null);
-  useEffect(() => {
-    if (!menu) return;
-    const away = (e) => !box.current?.contains(e.target) && setMenu(null);
-    const esc = (e) => e.key === "Escape" && (e.stopPropagation(), setMenu(null));
-    addEventListener("pointerdown", away);
-    addEventListener("keydown", esc, true);
-    return () => (removeEventListener("pointerdown", away), removeEventListener("keydown", esc, true));
-  }, [menu]);
+  useDismiss(box, !!menu, () => setMenu(null));
 
   async function go() {
     const m = get();
@@ -521,4 +520,39 @@ export function ShareButton({ get, label = "Share", className = btnGhost, up = f
       )}
     </span>
   );
+}
+
+// A value kept on this device (localStorage, as text), that still works where storage is refused
+// (a private window): it just isn't remembered there.
+export function useStored(key, init) {
+  const [v, setV] = useState(() => {
+    try {
+      return localStorage.getItem(key) ?? init;
+    } catch {
+      return init;
+    }
+  });
+  const set = (next) => {
+    setV(next);
+    try {
+      localStorage.setItem(key, next);
+    } catch {
+      /* not remembered: fine */
+    }
+  };
+  return [v, set];
+}
+
+// A menu or panel that closes on a tap outside `ref` or on Esc (Esc stops there, so a dialog
+// behind it stays open)
+export function useDismiss(ref, open, close) {
+  useEffect(() => {
+    if (!open) return;
+    const away = (e) => !ref.current?.contains(e.target) && close();
+    const esc = (e) => e.key === "Escape" && (e.stopPropagation(), close());
+    addEventListener("pointerdown", away);
+    addEventListener("keydown", esc, true);
+    return () => (removeEventListener("pointerdown", away), removeEventListener("keydown", esc, true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 }

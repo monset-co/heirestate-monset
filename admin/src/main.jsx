@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import { LazyMotion } from "motion/react";
 import { createRoot } from "react-dom/client";
 import "@fontsource-variable/bodoni-moda";
 import "@fontsource/marcellus";
@@ -10,7 +11,10 @@ import "./install"; // catches the browser's install prompt before anything else
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
-    <App />
+    {/* the animation engine arrives just after the first paint; components render still until then */}
+    <LazyMotion features={() => import("./motion-features").then((x) => x.default)}>
+      <App />
+    </LazyMotion>
   </StrictMode>
 );
 

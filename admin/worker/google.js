@@ -13,7 +13,7 @@
 // Email (read-only) is gmail.js, on the same connection.
 // Needs GOOGLE_CLIENT_ID (var) and GOOGLE_CLIENT_SECRET (secret).
 import { db } from "./supabase.js";
-import { notify } from "./push.js";
+import { b64u, notify, unb64u } from "./push.js";
 
 // Calendar to book; Gmail read-only for the Email page (gmail.js). Gmail is optional at consent.
 const SCOPES = "openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/gmail.readonly";
@@ -23,18 +23,17 @@ const json = (data, status = 200) => Response.json(data, { status, headers: { "C
 const redirect = (env) => `${env.ADMIN_URL}/api/google/callback`;
 
 // state = email.expiry.signature, so only a signed-in admin's own request can finish a connection
-const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const hmacKey = (secret, use) => crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [use]);
 export async function sign(secret, email, now = Date.now()) {
-  const body = `${b64(new TextEncoder().encode(email))}.${now + 10 * 60e3}`;
-  return `${body}.${b64(await crypto.subtle.sign("HMAC", await hmacKey(secret, "sign"), new TextEncoder().encode(body)))}`;
+  const body = `${b64u(new TextEncoder().encode(email))}.${now + 10 * 60e3}`;
+  return `${body}.${b64u(await crypto.subtle.sign("HMAC", await hmacKey(secret, "sign"), new TextEncoder().encode(body)))}`;
 }
 export async function unsign(secret, state, now = Date.now()) {
   const [e, exp, sig] = String(state).split(".");
   if (!sig || now > Number(exp)) return null;
-  const raw = Uint8Array.from(atob(sig.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const raw = unb64u(sig);
   const ok = await crypto.subtle.verify("HMAC", await hmacKey(secret, "verify"), raw, new TextEncoder().encode(`${e}.${exp}`));
-  return ok ? new TextDecoder().decode(Uint8Array.from(atob(e.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0))) : null;
+  return ok ? new TextDecoder().decode(unb64u(e)) : null;
 }
 
 // the event Google keeps, from the form's fields, or { error } in the admin's words. Times are
@@ -82,8 +81,18 @@ export function fields(b) {
   };
 }
 
+// The consent round trip is tied to this browser and used once: the state names its purpose
+// ("oauth:", so an email-view ticket signed with the same key can't stand in for it) and carries a
+// nonce that must match a short-lived cookie set here and cleared on the way back.
+const NONCE = "__Host-google-oauth";
+export const cookieOf = (req, name) =>
+  (req.headers.get("Cookie") ?? "")
+    .split(";")
+    .map((c) => c.trim().split("="))
+    .find(([k]) => k === name)?.[1];
 export function connect(env, me) {
-  return sign(env.GOOGLE_CLIENT_SECRET, me.email).then((state) => {
+  const nonce = crypto.randomUUID();
+  return sign(env.GOOGLE_CLIENT_SECRET, `oauth:${nonce}:${me.email}`).then((state) => {
     const p = new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID,
       redirect_uri: redirect(env),
@@ -93,7 +102,9 @@ export function connect(env, me) {
       prompt: "consent", // always hand back a refresh token
       state,
     });
-    return json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${p}` });
+    const r = json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${p}` });
+    r.headers.append("Set-Cookie", `${NONCE}=${nonce}; Path=/; Max-Age=600; Secure; HttpOnly; SameSite=Lax`);
+    return r;
   });
 }
 
@@ -109,14 +120,20 @@ async function tokens(env, params) {
 
 export async function callback(req, env) {
   const url = new URL(req.url);
-  const back = (q) => Response.redirect(`${env.ADMIN_URL}/calendar?${q}`, 302);
-  const by = await unsign(env.GOOGLE_CLIENT_SECRET, url.searchParams.get("state"));
-  if (!by) return back("google=expired");
+  const back = (q) => {
+    const r = new Response(null, { status: 302, headers: { Location: `${env.ADMIN_URL}/calendar?${q}` } });
+    r.headers.append("Set-Cookie", `${NONCE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`); // used once
+    return r;
+  };
+  const state = /^oauth:([0-9a-f-]{36}):(.+)$/.exec((await unsign(env.GOOGLE_CLIENT_SECRET, url.searchParams.get("state"))) ?? "");
+  const cookie = cookieOf(req, NONCE);
+  if (!state || state[1] !== cookie) return back("google=expired");
+  const by = state[2];
   if (!url.searchParams.get("code")) return back("google=declined");
   const t = await tokens(env, { grant_type: "authorization_code", code: url.searchParams.get("code"), redirect_uri: redirect(env) });
   if (!t.refresh_token || !t.scope?.includes("calendar.events")) return back("google=missing");
   // the id_token came straight from Google over TLS, so its claims can be read as they are
-  const { email } = JSON.parse(atob(t.id_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  const { email } = JSON.parse(new TextDecoder().decode(unb64u(t.id_token.split(".")[1])));
   await db(env).upsert("google_account", { id: 1, email, refresh_token: t.refresh_token, connected_by: by, connected_at: new Date().toISOString() });
   cached = null;
   return back("google=connected");
@@ -231,6 +248,8 @@ export async function update(req, env) {
   const was = await google(env, `/${b.id}`);
   const kept = new Map((was.attendees ?? []).map((a) => [a.email.toLowerCase(), a]));
   f.event.attendees = [...(was.attendees ?? []).filter((a) => a.self || a.resource), ...f.guests.map((g) => kept.get(g) ?? { email: g })].filter((a, i, all) => all.findIndex((x) => x.email === a.email) === i);
+  // a lead picked while editing: the booking becomes theirs (the other private keys stay)
+  if (Number(b.lead_id)) f.event.extendedProperties = { private: { lead_id: String(Number(b.lead_id)) } };
   const e = await google(env, `/${b.id}?sendUpdates=all`, { method: "PATCH", body: JSON.stringify(f.event) });
   return json({ id: e.id, link: e.htmlLink });
 }
@@ -249,7 +268,8 @@ export function dueReminders(items, defaults, from, to) {
   for (const e of items) {
     if (e.status === "cancelled") continue;
     const start = e.start?.dateTime ? Date.parse(e.start.dateTime) : Date.parse(`${e.start?.date}T00:00:00+08:00`);
-    const list = e.reminders?.useDefault === false ? (e.reminders.overrides ?? []) : defaults;
+    // the calendar's defaults are for timed bookings; Google keeps all-day ones separately
+    const list = e.reminders?.useDefault === false ? (e.reminders.overrides ?? []) : e.start?.dateTime ? defaults : [];
     for (const r of list ?? []) if (r.method === "popup" && start - r.minutes * 60e3 > from && start - r.minutes * 60e3 <= to) out.push({ event: e, minutes: r.minutes });
   }
   return out;
@@ -267,8 +287,8 @@ export async function pushReminders(env, at = Date.now()) {
   const [account] = await db(env).get("google_account?select=email");
   if (!account) return;
   const from = at - 15 * 60e3;
-  // reminders up to 8 days ahead: the longest the booking form offers is a week
-  const p = new URLSearchParams({ timeMin: new Date(from).toISOString(), timeMax: new Date(at + 8 * 864e5).toISOString(), singleEvents: "true", maxResults: "250", timeZone: TZ });
+  // reminders up to four weeks ahead, the most Google allows
+  const p = new URLSearchParams({ timeMin: new Date(from).toISOString(), timeMax: new Date(at + 29 * 864e5).toISOString(), singleEvents: "true", maxResults: "250", timeZone: TZ });
   const out = await google(env, `?${p}`);
   const due = dueReminders(out.items ?? [], out.defaultReminders ?? [], from, at);
   if (!due.length) return;

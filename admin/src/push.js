@@ -16,7 +16,12 @@ export function usePush() {
 
   useEffect(() => {
     if (!supported) return setOn(false);
-    navigator.serviceWorker.ready.then((r) => r.pushManager.getSubscription()).then((s) => setOn(!!s), () => setOn(false));
+    // on only when the server also has this device for this person: it drops devices the push
+    // service has retired, and on a shared device the browser's subscription may be someone else's
+    navigator.serviceWorker.ready
+      .then((r) => r.pushManager.getSubscription())
+      .then((s) => (s ? run(supabase.from("push_subscriptions").select("endpoint").eq("endpoint", s.endpoint)).then((rows) => setOn(rows.length > 0)) : setOn(false)))
+      .catch(() => setOn(false));
   }, [supported]);
 
   async function turnOn() {
@@ -27,9 +32,20 @@ export function usePush() {
       const { key } = await api("push/key");
       if (!key) throw new Error("Notifications aren't set up on the server yet (VAPID keys).");
       const reg = await navigator.serviceWorker.ready;
-      const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
-      const { endpoint, keys } = sub.toJSON();
-      await run(supabase.from("push_subscriptions").upsert({ endpoint, p256dh: keys.p256dh, auth: keys.auth }));
+      const save = async (sub) => {
+        const { endpoint, keys } = sub.toJSON();
+        await run(supabase.from("push_subscriptions").upsert({ endpoint, p256dh: keys.p256dh, auth: keys.auth }));
+      };
+      const fresh = () => reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+      const old = await reg.pushManager.getSubscription();
+      try {
+        await save(old ?? (await fresh()));
+      } catch (err) {
+        // a shared device: this browser's subscription is someone else's, so it starts afresh as ours
+        if (!old || !/session has ended|row-level/i.test(err.message)) throw err;
+        await old.unsubscribe();
+        await save(await fresh());
+      }
       setOn(true);
       toast("Notifications on for this device");
     } catch (err) {

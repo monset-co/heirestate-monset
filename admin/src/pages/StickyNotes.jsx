@@ -2,7 +2,7 @@
 // TaskKanban.tsx): tear a note off the pad in the corner and drop it on the wall, or tap the pad;
 // drag a note into the bin to throw it away (with Undo). Pinned notes show above every tab.
 import { GripVertical, Pin, PinOff, Plus, Trash2 } from "lucide-react";
-import { animate, motion, useDragControls, useMotionValue, useReducedMotion } from "motion/react";
+import { animate, m as motion, useDragControls, useMotionValue, useReducedMotion } from "motion/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { supabase, run } from "../supabase";
 import { Live, LiveLi, SkeletonRows, spring, toast } from "../motion";

@@ -46,6 +46,18 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(fetch(req).catch(() => caches.match("/index.html")));
     return;
   }
-  // hashed files never change: kept copy first
-  e.respondWith(caches.match(req).then((hit) => hit ?? fetch(req)));
+  // hashed files never change: kept copy first; one not kept at install is kept on first use
+  e.respondWith(
+    caches.match(req).then(
+      (hit) =>
+        hit ??
+        fetch(req).then((res) => {
+          if (res.ok && url.pathname.startsWith("/assets/")) {
+            const copy = res.clone();
+            e.waitUntil(caches.open(CACHE).then((c) => c.put(req, copy)));
+          }
+          return res;
+        })
+    )
+  );
 });

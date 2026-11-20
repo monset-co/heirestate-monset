@@ -2,12 +2,13 @@
 // you, a new inquiry, a WhatsApp message, a reminder come due; admin/worker/push.js), whether or not
 // this device has push turned on. New ones arrive live; opening one marks it read.
 import { Bell as BellIcon, CheckCheck } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, m as motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { supabase, run } from "./supabase";
 import { useMe } from "./me";
 import { ago } from "./crm";
+import { useDismiss } from "./ui";
 
 const COLS = "id, title, body, url, read_at, created_at";
 
@@ -30,15 +31,7 @@ export default function Bell() {
     return () => supabase.removeChannel(ch);
   }, [me.email]);
 
-  // a click elsewhere, or Esc, closes it
-  useEffect(() => {
-    if (!open) return;
-    const away = (e) => !box.current?.contains(e.target) && setOpen(false);
-    const esc = (e) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", esc);
-    return () => (document.removeEventListener("pointerdown", away), document.removeEventListener("keydown", esc));
-  }, [open]);
+  useDismiss(box, open, () => setOpen(false)); // a click elsewhere, or Esc, closes it
 
   const markRead = (ids) => {
     const at = new Date().toISOString();

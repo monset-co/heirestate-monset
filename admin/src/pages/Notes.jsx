@@ -4,7 +4,7 @@
 // note there is a task for that person, "Anyone" holds what's up for grabs. Tear a note off the pad
 // onto a column, or drag a note from one column to another to hand it over; into the bin to throw it out.
 import { Check, Flag, Lock, Trash2, UserRound } from "lucide-react";
-import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
+import { animate, m as motion, useMotionValue, useReducedMotion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { supabase, run } from "../supabase";

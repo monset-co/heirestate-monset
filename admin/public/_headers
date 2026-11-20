@@ -6,7 +6,7 @@
   X-Frame-Options: DENY
   X-Robots-Tag: noindex, nofollow
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; frame-src 'self' https://view.officeapps.live.com; style-src 'self'; img-src 'self' data: blob: https://*.supabase.co https://tile.openstreetmap.org; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; frame-src 'self' https://view.officeapps.live.com; style-src 'self'; img-src 'self' data: blob: https://rqspfymfujfimljgilid.supabase.co https://tile.openstreetmap.org; font-src 'self'; connect-src 'self' https://rqspfymfujfimljgilid.supabase.co wss://rqspfymfujfimljgilid.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

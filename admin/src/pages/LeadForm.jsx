@@ -4,10 +4,10 @@
 // the same wish always reads the same way.
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { supabase, run } from "../supabase";
+import { supabase, run, every } from "../supabase";
 import { toast } from "../motion";
 import { ErrorNote, Field, Select, btn, input } from "../ui";
-import { CATEGORIES, SOURCES } from "../crm";
+import { CATEGORIES, SOURCES, peso } from "../crm";
 import { AREAS, FURNISHING, KINDS, LANDMARKS, LOOKING_TO, RADII, SIZES, pesos, tidyMobile } from "../match";
 
 const START = { "pre-selling": ["Buy pre-selling"], rentals: ["Rent"], brokerage: ["Buy resale"] };
@@ -18,7 +18,6 @@ export const kindFor = (lookingTo, kind) => {
   const kinds = lookingTo.map((w) => KIND_OF[w]).filter(Boolean);
   return !kinds.length || kinds.includes(kind) ? kind : kinds[0];
 };
-const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
 
 // Someone who's already a lead with this mobile (its last 10 digits, however it's written) or this
 // email, so a second lead for the same person isn't made by mistake. It warns; it doesn't stop.
@@ -29,8 +28,9 @@ export function useSameLead(mobile, email, except) {
     const e = String(email ?? "").trim().toLowerCase();
     const ors = [d.length >= 9 && `mobile.ilike.*${d.split("").join("*")}`, /^[^\s@",()]+@[^\s@",()]+\.[^\s@",()]+$/.test(e) && `email.eq."${e}"`].filter(Boolean);
     if (!ors.length) return setHit(null);
-    const t = setTimeout(() => run(supabase.from("leads").select("id, name").or(ors.join(",")).neq("id", except ?? 0).limit(1)).then((r) => setHit(r[0] ?? null), () => setHit(null)), 400);
-    return () => clearTimeout(t);
+    let live = true; // typing on: an older answer can't overwrite a newer one
+    const t = setTimeout(() => run(supabase.from("leads").select("id, name").or(ors.join(",")).neq("id", except ?? 0).limit(1)).then((r) => live && setHit(r[0] ?? null), () => live && setHit(null)), 400);
+    return () => ((live = false), clearTimeout(t));
   }, [mobile, email, except]);
   return hit;
 }
@@ -66,7 +66,7 @@ export default function LeadForm({ lead, onSaved }) {
   // the buildings in the inventory today: a new one there is a choice here at once
   const [buildings, setBuildings] = useState([]);
   useEffect(() => {
-    run(supabase.from("inventory").select("building").not("building", "is", null)).then(
+    every(() => supabase.from("inventory").select("building").not("building", "is", null).order("id")).then(
       (rows) => setBuildings([...new Set(rows.map((r) => r.building))].sort((a, b) => a.localeCompare(b))),
       () => {}
     );

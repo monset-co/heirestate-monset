@@ -3,6 +3,7 @@
 export const TTL = 10 * 60e3;
 export const TRIES = 5;
 export const RESEND_AFTER = 60e3;
+export const SENDS_PER_HOUR = 6; // to one email, over every session
 
 export const newCode = () => String(crypto.getRandomValues(new Uint32Array(1))[0] % 1e6).padStart(6, "0");
 

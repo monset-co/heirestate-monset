@@ -11,7 +11,12 @@ const serviceWorker = {
   name: "heir-admin-sw",
   apply: "build",
   generateBundle(_, bundle) {
-    const assets = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/logo.svg", "/loader.svg", ...Object.keys(bundle).map((f) => `/${f}`)];
+    // kept on install: the app and its pages, but not what most visits never open (the PDF reader
+    // and its 1.3 MB worker, the map, fonts for other alphabets, the older .woff copies); those are
+    // kept the first time they're used (admin/sw.js)
+    const later = /pdf|PdfDeck|MapView|leaflet|-(cyrillic|greek|vietnamese|math|symbols|latin-ext)[-.]|\.woff$/i;
+    const files = Object.keys(bundle).filter((f) => !later.test(f));
+    const assets = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/logo.svg", "/loader.svg", ...files.map((f) => `/${f}`)];
     const version = Date.now().toString(36);
     const source = readFileSync("admin/sw.js", "utf8").replace("__VERSION__", version).replace("__ASSETS__", JSON.stringify([...new Set(assets)]));
     this.emitFile({ type: "asset", fileName: "sw.js", source });

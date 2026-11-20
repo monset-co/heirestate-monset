@@ -4,14 +4,21 @@
 import { Copy, ExternalLink, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Chip } from "./Matches";
 import { AREAS, inArea, LANDMARK, LANDMARKS, RADII, distance } from "../match";
-import MapView, { PIN } from "../MapView";
-import { motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+// the map (Leaflet, ~45 KB) loads when one is first shown, not with the table
+const MapView = lazy(() => import("../MapView"));
+const LazyMap = (p) => (
+  <Suspense fallback={<div aria-hidden className={`rounded-lg border border-line bg-sunken ${p.className ?? "h-80"}`} />}>
+    <MapView {...p} />
+  </Suspense>
+);
+import { m as motion } from "motion/react";
+import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { supabase, run } from "../supabase";
+import { supabase, run, every } from "../supabase";
 import { api } from "../api";
 import { SkeletonRows, spring, toast } from "../motion";
 import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask, ShareButton } from "../ui";
+import { PIN, peso } from "../crm";
 
 const STATUSES = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
 const TABS = [
@@ -26,7 +33,6 @@ const OPEN = ["Pre-selling", "For Rent", "For Sale", "For Assume"]; // still on 
 const pinOf = (r) => (r.status.includes("Pre-selling") ? PIN.pre : r.status.some((s) => ["For Rent", "For Sale"].includes(s)) && r.available !== false ? PIN.open : r.status.some((s) => ["Reserved", "For Assume"].includes(s)) ? PIN.held : PIN.gone);
 // where a place is, through the admin's Worker (OpenStreetMap)
 const lookUp = (q) => api(`geo?q=${encodeURIComponent(q)}`).then((r) => r.places);
-const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
 const rentOnly = (r) => r.status.some((s) => s === "For Rent" || s === "Rented") && !r.status.some((s) => s === "For Sale" || s === "Sold" || s === "Pre-selling");
 const priceOf = (r) => (r.price != null ? `${peso(r.price)}${rentOnly(r) ? "/mo" : ""}` : r.price_text ?? "—");
 const date = (d) => d && new Date(`${d}T00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
@@ -46,7 +52,7 @@ export default function Inventory() {
   };
 
   useEffect(() => {
-    run(supabase.from("inventory").select("*").order("updated_at", { ascending: false })).then((rows) => {
+    every(() => supabase.from("inventory").select("*").order("updated_at", { ascending: false }).order("id")).then((rows) => {
       setList(rows);
       // from a lead's matches: open that property
       const want = rows.find((r) => r.id === Number(params.get("open")));
@@ -61,7 +67,11 @@ export default function Inventory() {
   const buildingsHere = useMemo(() => (q.where ? buildings.filter((b) => list.some((r) => r.building === b && inArea(q.where, r))) : buildings), [buildings, list, q.where]);
   const inTab = (t, r) => !t.has || r.status.some((s) => t.has.includes(s));
   // ponytail: the whole inventory filtered in the browser; move to SQL past a few thousand rows
+  const dq = useDeferredValue(q); // typing stays quick: the filtering catches up a beat behind
+  const [limit, setLimit] = useState(100);
+  useEffect(() => setLimit(100), [q, tab.id]);
   const shown = useMemo(() => {
+    const q = dq;
     const words = q.text.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const max = Number(q.max.replace(/\D/g, "")) || 0;
     const today = new Date().toISOString().slice(0, 10);
@@ -83,7 +93,7 @@ export default function Inventory() {
     if (q.near) return rows.sort((a, b) => distance(a, q.near) - distance(b, q.near));
     return q.when === "later" ? rows.sort((a, b) => a.available_from.localeCompare(b.available_from)) : rows;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [list, q, tab.id]);
+  }, [list, dq, tab.id]);
   const set = (k) => (e) => setQ({ ...q, [k]: e.target.value });
 
   const saved = (row, gone) => {
@@ -189,7 +199,7 @@ export default function Inventory() {
       <TabPanel key={`${tab.id}:${view}`} className={`${card} mt-4 overflow-x-auto`}>
         {view === "map" && list ? (
           <div className="grid gap-2 p-3">
-            <MapView
+            <LazyMap
               className="h-[65vh]"
               pins={shown.filter((r) => r.lat != null).map((r) => ({ id: r.id, lat: r.lat, lng: r.lng, color: pinOf(r), label: `${r.type || "Property"} · ${priceOf(r)}`, row: r }))}
               ring={q.near ? { at: LANDMARK[q.near], km: Number(q.km), name: q.near } : null}
@@ -218,7 +228,7 @@ export default function Inventory() {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {shown.map((r) => (
+              {shown.slice(0, limit).map((r) => (
                 <tr key={r.id} onClick={() => show(r)} className="group cursor-pointer transition-colors hover:bg-bg active:bg-sunken">
                   <td className="w-full max-w-0 px-4 py-3">
                     <button type="button" onClick={() => show(r)} className="block max-w-full truncate text-left font-medium text-fg outline-offset-4 group-hover:text-accent-ink">
@@ -242,7 +252,14 @@ export default function Inventory() {
           </table>
         )}
       </TabPanel>
-      {list && shown.length > 0 && <p className="mt-2 text-xs text-muted">{shown.length} shown</p>}
+      {list && shown.length > 0 && (
+        <p className="mt-2 flex items-center gap-3 text-xs text-muted">
+          {view !== "map" && shown.length > limit ? `${limit} of ${shown.length} shown` : `${shown.length} shown`}
+          {view !== "map" && shown.length > limit && (
+            <button type="button" className="font-medium text-fg underline underline-offset-2" onClick={() => setLimit((n) => n + 200)}>Show more</button>
+          )}
+        </p>
+      )}
 
       <Modal open={!!open} onClose={() => setOpen(null)} title={open?.id ? open.type || "Property" : "Add property"}>
         {open && (editing ? <PropertyForm row={open} onSaved={saved} buildings={buildings} owners={[...new Set((list ?? []).map((r) => r.source).filter(Boolean))].sort((a, b) => a.localeCompare(b))} /> : <PropertyView row={open} onEdit={() => setEditing(true)} />)}
@@ -286,7 +303,7 @@ function PropertyView({ row: r, onEdit }) {
       </p>
       {r.lat != null ? (
         <div className="grid gap-1">
-          <MapView className="h-48" zoom={16} pins={[{ id: r.id, lat: r.lat, lng: r.lng, color: pinOf(r) }]} />
+          <LazyMap className="h-48" zoom={16} pins={[{ id: r.id, lat: r.lat, lng: r.lng, color: pinOf(r) }]} />
           {r.geo === "approx" && <p className="text-xs text-muted">Only the neighbourhood is known. Edit to drag the pin onto the building.</p>}
         </div>
       ) : (
@@ -541,7 +558,7 @@ function PropertyForm({ row, onSaved, buildings = [], owners = [] }) {
           )}
           <span className="text-xs text-muted">{f.pos ? (f.geo === "pinned" ? "Pinned by hand" : f.geo === "approx" ? "Neighbourhood only: drag the pin onto the building" : "Found on OpenStreetMap") : "Or click the map where it is"}</span>
         </div>
-        <MapView className="h-64" movable={f.pos} onMove={(pos) => setF((x) => ({ ...x, pos, geo: "pinned" }))} />
+        <LazyMap className="h-64" movable={f.pos} onMove={(pos) => setF((x) => ({ ...x, pos, geo: "pinned" }))} />
         {found && <p className="text-xs text-muted">{found}</p>}
       </div>
 

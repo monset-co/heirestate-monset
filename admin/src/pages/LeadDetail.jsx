@@ -6,7 +6,7 @@ import { supabase, run } from "../supabase";
 import { Live, LiveLi, Skeleton, SkeletonRows, toast } from "../motion";
 import { Badge, Empty, ErrorNote, Field, Modal, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, Select, ask } from "../ui";
 import LeadForm from "./LeadForm";
-import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, TEMPS, ago, papersDue, quiet, when } from "../crm";
+import { CATEGORIES, ON_THE_CLOCK, OPEN, SITES, SOURCES, STAGES, TEMPS, ago, papersDue, quiet, peso, when } from "../crm";
 import Activity from "./Activity";
 import FilesTab, { FILES } from "./FilesTab";
 import { NOTE, Notes, Pinned } from "./StickyNotes";
@@ -228,7 +228,6 @@ function Overview({ lead, onSaved, onEdit }) {
     setBusy(false);
   }
 
-  const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
   // what they want, each kind of wish in its own colour (the same colours as the matches below)
   const wants = [
     ["Looking to", lead.looking_to, "navy"],
@@ -257,7 +256,7 @@ function Overview({ lead, onSaved, onEdit }) {
               </a>
             )}
             {lead.email && (
-              <a href={`mailto:${lead.email}`} className={`${btnGhost} min-w-0`}>
+              <a href={`mailto:${encodeURIComponent(lead.email)}`} className={`${btnGhost} min-w-0`}>
                 <Mail className="size-4 shrink-0" aria-hidden /> <span className="truncate">{lead.email}</span>
               </a>
             )}

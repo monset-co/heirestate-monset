@@ -32,3 +32,14 @@ export async function run(query) {
   }
   return data;
 }
+
+// Every row of a query, a thousand at a time: Supabase sends at most 1,000 rows per request, so a
+// plain select quietly stops there. `make` builds the query afresh each time; give it a stable order.
+export async function every(make) {
+  const rows = [];
+  for (let from = 0; ; from += 1000) {
+    const page = await run(make().range(from, from + 999));
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+  }
+}
