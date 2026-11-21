@@ -29,11 +29,12 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
 }
 
 // Pages load on demand. A tab left open across a deploy asks for the old build's page files, which
-// are gone: load the new build instead (once, so a real outage doesn't reload forever).
+// are gone: load the new build instead. At most once a minute, so a real outage doesn't reload
+// forever, yet every later deploy in the same tab still gets its reload.
 addEventListener("vite:preloadError", (e) => {
   try {
-    if (sessionStorage.getItem("reloaded-for-deploy")) return;
-    sessionStorage.setItem("reloaded-for-deploy", "1");
+    if (Date.now() - Number(sessionStorage.getItem("reloaded-for-deploy")) < 60_000) return;
+    sessionStorage.setItem("reloaded-for-deploy", String(Date.now()));
   } catch {}
   e.preventDefault();
   location.reload();
