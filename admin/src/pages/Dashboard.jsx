@@ -58,7 +58,7 @@ export default function Dashboard() {
       <TurnOnAlerts />
 
       {/* Phones: agents work from here, so notes, today and a new lead come first */}
-      <div className="mt-4 grid gap-6 md:hidden">
+      <div className="mt-4 grid grid-cols-1 gap-6 md:hidden">
         <QuickNote />
         <Today reminders={data?.reminders} />
         <QuickLead />
@@ -85,15 +85,15 @@ export default function Dashboard() {
       </dl>
 
       {/* the day first (what's booked and due, then who's waiting), the pipeline beside it */}
-      <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-        <div className="stagger grid content-start gap-8">
+      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        <div className="stagger grid grid-cols-1 content-start gap-8">
           {/* phones see Today above */}
           <div className="hidden md:block">
             <Today reminders={data?.reminders} />
           </div>
           <NeedsYou leads={data?.leads} />
         </div>
-        <div className="stagger grid content-start gap-8">
+        <div className="stagger grid grid-cols-1 content-start gap-8">
           <Section title="Latest inquiries" to="/leads?list=all" linkLabel="All leads">
             <div className={card}>
               {!data ? (
@@ -179,7 +179,7 @@ function QuickNote() {
 
   return (
     <Section title="Quick note" to="/notes" linkLabel="My notes">
-      <form onSubmit={save} className={`${card} grid gap-3 p-3`}>
+      <form onSubmit={save} className={`${card} grid grid-cols-1 gap-3 p-3`}>
         <ErrorNote error={error} />
         <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} maxLength={4000} placeholder="A number to call back, a unit seen, what the client said…" aria-label="Note" className={input} />
         <button disabled={busy || !body.trim()} className={btn}>
@@ -292,7 +292,7 @@ function QuickLead() {
 
   return (
     <Section title="New lead" to="/leads" linkLabel="All leads">
-      <form onSubmit={save} className={`${card} grid gap-3 p-3`}>
+      <form onSubmit={save} className={`${card} grid grid-cols-1 gap-3 p-3`}>
         <ErrorNote error={error} />
         <input required value={f.name} onChange={set("name")} placeholder="Name" aria-label="Name" autoComplete="off" className={input} />
         <input value={f.mobile} onChange={set("mobile")} type="tel" inputMode="tel" placeholder="Mobile, 0917 123 4567" aria-label="Mobile" autoComplete="off" className={input} />
