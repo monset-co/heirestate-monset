@@ -1,7 +1,7 @@
 // Inventory: every property the team can offer, from owners and other brokers (supabase/migrations
 // …_inventory.sql), in tabs for pre-selling, rentals and sales. Not the public listings: nothing here
 // shows on a site. A row opens its full record to read, copy the post summary from, or edit.
-import { Copy, ExternalLink, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, Globe, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Chip } from "./Matches";
 import { AREAS, inArea, LANDMARK, LANDMARKS, RADII, distance } from "../match";
 // the map (Leaflet, ~45 KB) loads when one is first shown, not with the table
@@ -13,12 +13,13 @@ const LazyMap = (p) => (
 );
 import { m as motion } from "motion/react";
 import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { supabase, run, every } from "../supabase";
 import { api } from "../api";
 import { SkeletonRows, spring, toast } from "../motion";
 import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask, ShareButton } from "../ui";
 import { PIN, peso } from "../crm";
+import { slugify } from "../../../src/listings/rules.js";
 
 const STATUSES = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
 const TABS = [
@@ -276,7 +277,7 @@ export default function Inventory() {
 
 // A property at a glance: price and status up top, the facts as chips, the long text in labelled
 // blocks, links as buttons. Edit opens the full form.
-function PropertyView({ row: r, onEdit }) {
+export function PropertyView({ row: r, onEdit }) {
   const today = new Date().toISOString().slice(0, 10);
   const blocks = [
     ["Specs", r.specs],
@@ -353,10 +354,18 @@ function PropertyView({ row: r, onEdit }) {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={btn} onClick={onEdit}>
-          <Pencil className="size-4" aria-hidden /> Edit
-        </button>
+        {/* opened from a lead's matches there's no form here: Edit goes to the Inventory page */}
+        {onEdit ? (
+          <button type="button" className={btn} onClick={onEdit}>
+            <Pencil className="size-4" aria-hidden /> Edit
+          </button>
+        ) : (
+          <Link to={`/inventory?open=${r.id}`} className={btnGhost}>
+            <Pencil className="size-4" aria-hidden /> Edit in Inventory
+          </Link>
+        )}
         <ShareButton get={() => shareOf(r)} up />
+        {r.id && <ToListing row={r} />}
       </div>
     </div>
   );
@@ -612,5 +621,43 @@ function PropertyForm({ row, onSaved, buildings = [], owners = [] }) {
         )}
       </div>
     </form>
+  );
+}
+
+// A property put on the websites: a draft listing made from it, opened in Listings to check, add
+// photos and publish. It takes the public facts only (never the owner, the codes or the notes), and
+// the same property made twice opens the listing already made (its address ends in the id).
+function ToListing({ row: r }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  async function go() {
+    const title = [r.type, r.building ? `at ${r.building}` : r.location?.split(",")[0]].filter(Boolean).join(" ").slice(0, 140) || `Property ${r.id}`;
+    const slug = `${slugify(title).slice(0, 70)}-${r.id}`.replace(/^-+/, "");
+    const [made] = await run(supabase.from("listings").select("id").eq("slug", slug));
+    if (made) return navigate(`/listings/${made.id}`);
+    if (!(await ask({ title: "Put this on the websites?", body: "A draft listing is made from its type, place, price and write-up. Check it, add photos and the owner's authority, then publish it from Listings. Nothing shows on the sites until then.", yes: "Make the draft" }))) return;
+    setBusy(true);
+    try {
+      const rent = r.status.some((s) => s === "For Rent" || s === "Rented");
+      const type = rent ? "rental" : /\blots?\b/i.test(r.type ?? "") && !/house/i.test(r.type ?? "") ? "lot" : "resale";
+      const description = r.summary?.trim() || [r.specs && `Specs: ${r.specs}`, r.inclusions && `Inclusions: ${r.inclusions}`, r.payment_terms && `Payment terms: ${r.payment_terms}`, r.furnishing && `Furnishing: ${r.furnishing}`].filter(Boolean).join("\n\n");
+      const l = await run(
+        supabase
+          .from("listings")
+          .insert({ title, slug, type, location: r.location?.slice(0, 200) || null, price_min: r.price ?? null, unit_type: r.type?.slice(0, 80) || null, description: description.slice(0, 8000) || null, status: "available", published: false })
+          .select("id")
+          .single()
+      );
+      toast("Draft listing made. Check it and add photos, then publish.");
+      navigate(`/listings/${l.id}`);
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+    setBusy(false);
+  }
+  return (
+    <button type="button" className={btnGhost} onClick={go} disabled={busy}>
+      <Globe className="size-4" aria-hidden /> {busy ? "Making…" : "Put on the websites"}
+    </button>
   );
 }

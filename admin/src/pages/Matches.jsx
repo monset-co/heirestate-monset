@@ -3,10 +3,10 @@
 // when it doesn't, so a glance says why a property is on the list.
 import { Star } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
 import { supabase, run, every } from "../supabase";
 import { SkeletonRows, toast } from "../motion";
-import { Empty, ErrorNote, btnGhost, card } from "../ui";
+import { Empty, ErrorNote, Modal, btnGhost, card } from "../ui";
+import { PropertyView } from "./Inventory";
 import { LOOKING_TO, fit, matches } from "../match";
 import { peso } from "../crm";
 
@@ -41,6 +41,18 @@ export default function Matches({ lead }) {
   const [all, setAll] = useState(false);
   const [priorities, setPriorities] = useState(lead.priorities ?? []);
   const [onlyPrio, setOnlyPrio] = useState(false);
+  // a property opens here, over the lead, so checking several doesn't leave the client's page
+  const [open, setOpen] = useState(null);
+  async function show(p) {
+    setOpen({ id: p.id, type: p.type, loading: true }); // the title at once, the card when it's in
+    try {
+      const full = await run(supabase.from("inventory").select("*").eq("id", p.id).single());
+      setOpen((o) => (o?.id === p.id ? full : o));
+    } catch (e) {
+      setOpen(null);
+      setError(e.message);
+    }
+  }
   const statuses = lead.looking_to?.length ? lead.looking_to.flatMap((w) => LOOKING_TO[w] ?? []) : START[lead.category];
   const key = JSON.stringify([statuses, lead.property_types, lead.areas, lead.buildings, lead.furnishings, lead.budget_max, lead.needed_by, lead.near, lead.near_km]);
 
@@ -119,10 +131,10 @@ export default function Matches({ lead }) {
           <ul className="divide-y divide-line">
             {shown.map(({ p, f }) => (
               <li key={p.id}>
-                <Link to={`/inventory?open=${p.id}`} className="group grid gap-2 px-4 py-3 text-sm transition-colors hover:bg-bg sm:grid-cols-[1fr_auto] sm:items-center">
+                <button type="button" onClick={() => show(p)} className="group grid w-full gap-2 px-4 py-3 text-left text-sm transition-colors hover:bg-bg active:bg-sunken/60 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-fg group-hover:text-accent-ink">{p.type || "Property"}</p>
-                    <p className="truncate text-xs text-muted">
+                    <p className="font-medium text-fg group-hover:text-accent-ink sm:truncate">{p.type || "Property"}</p>
+                    <p className="text-xs text-muted sm:truncate">
                       {f.km != null && <span className="font-medium text-fg tabular-nums">{f.km.toFixed(1)} km{p.geo === "approx" ? " ≈" : ""} from {lead.near} · </span>}
                       {p.location}
                     </p>
@@ -135,11 +147,11 @@ export default function Matches({ lead }) {
                       ))}
                     </div>
                   </div>
-                  <div className="text-right tabular-nums">
+                  <div className="tabular-nums sm:text-right">
                     <p className="font-medium text-fg">{p.price != null ? peso(p.price) : p.price_text ?? "—"}</p>
                     <p className="text-xs text-muted">{f.score} of {asked.filter(([k]) => f[k] !== null).length} wishes</p>
                   </div>
-                </Link>
+                </button>
               </li>
             ))}
           </ul>
@@ -150,6 +162,9 @@ export default function Matches({ lead }) {
           {all ? "Show the best 6" : `Show all ${list.length}`}
         </button>
       )}
+      <Modal open={!!open} onClose={() => setOpen(null)} title={open?.type || "Property"}>
+        {open && (open.loading ? <SkeletonRows n={4} /> : <PropertyView row={open} />)}
+      </Modal>
     </section>
   );
 }
