@@ -77,7 +77,7 @@ export default function Inventory() {
         (!q.pets || r.pet_friendly === "yes") &&
         (!q.when || (q.when === "now" ? r.available === true && !(r.available_from > today) : r.available_from > today)) &&
         (!max || (r.price != null && r.price <= max)) &&
-        words.every((w) => [r.type, r.location, r.source, r.specs, r.furnishing, r.rph_code, r.fh_code, r.price_text].join(" ").toLowerCase().includes(w))
+        words.every((w) => [r.type, r.building, r.location, r.source, r.specs, r.furnishing, r.rph_code, r.fh_code, r.price_text].join(" ").toLowerCase().includes(w))
     );
     // near a place: closest first; coming up: soonest first
     if (q.near) return rows.sort((a, b) => distance(a, q.near) - distance(b, q.near));
@@ -112,7 +112,13 @@ export default function Inventory() {
         <label className="relative sm:max-w-xs sm:flex-1">
           <span className="sr-only">Search inventory</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" aria-hidden />
-          <input type="search" placeholder="Search place, type, owner, code…" value={q.text} onChange={set("text")} className={`${input} pl-9`} />
+          <input type="search" placeholder="Search place, type, owner, code…" value={q.text} onChange={(e) => {
+            // a fresh search looks through everything: every tab, every status; narrow from there
+            if (!q.text.trim() && e.target.value.trim()) {
+              setQ({ ...q, text: e.target.value, status: "" });
+              if (tab.id !== "all") setParams({ tab: "all" }, { replace: true });
+            } else setQ({ ...q, text: e.target.value });
+          }} className={`${input} pl-9`} />
         </label>
         <Select aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${input} sm:w-48`}>
           <option value="open">Still available</option>
