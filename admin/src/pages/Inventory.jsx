@@ -20,10 +20,12 @@ const TABS = [
   { id: "rentals", label: "Rentals", has: ["For Rent", "Rented"], start: ["For Rent"] },
   { id: "sale", label: "For sale", has: ["For Sale", "Sold", "For Assume"], start: ["For Sale"] },
 ];
-const TONE = { "Pre-selling": "new", "For Rent": "inv-for-rent", "For Sale": "inv-for-sale", "For Assume": "inv-assume", Reserved: "inv-reserved", Rented: "inv-rented", Sold: "inv-sold", Unavailable: "inv-unavailable" };
+const TONE = { "Pre-selling": "inv-pre", "For Rent": "inv-for-rent", "For Sale": "inv-for-sale", "For Assume": "inv-assume", Reserved: "inv-reserved", Rented: "inv-rented", Sold: "inv-sold", Unavailable: "inv-unavailable" };
 const OPEN = ["Pre-selling", "For Rent", "For Sale", "For Assume"]; // still on offer
-// a pin's colour on the map, by what's happening with it (the legend under the map says so)
-const pinOf = (r) => (r.status.includes("Pre-selling") ? PIN.pre : r.status.some((s) => ["For Rent", "For Sale"].includes(s)) && r.available !== false ? PIN.open : r.status.some((s) => ["Reserved", "For Assume"].includes(s)) ? PIN.held : PIN.gone);
+// a pin's colour on the map: the same colour as its status badge (ui.jsx "inv-*"). A property with
+// several statuses takes the first of these, in order: what's on offer before what's gone.
+const PIN_OF = { "Pre-selling": "#16a34a", "For Rent": "#f97316", "For Sale": "#38bdf8", "For Assume": "#facc15", Reserved: "#a1a1aa", Rented: "#dc2626", Sold: "#14213a", Unavailable: "#171717" };
+const pinOf = (r) => PIN_OF[Object.keys(PIN_OF).find((s) => r.status.includes(s))] ?? "#a1a1aa";
 // where a place is, through the admin's Worker (OpenStreetMap)
 const lookUp = (q) => api(`geo?q=${encodeURIComponent(q)}`).then((r) => r.places);
 const peso = (n) => `₱${n.toLocaleString("en-PH")}`;
@@ -218,8 +220,8 @@ export default function Inventory() {
               onPin={(p) => show(p.row)}
             />
             <p className="flex flex-wrap items-center gap-3 px-1 text-xs text-muted">
-              {[["open", "On offer"], ["pre", "Pre-selling"], ["held", "Reserved or assume"], ["gone", "Rented, sold or unavailable"]].map(([k, l]) => (
-                <span key={k} className="flex items-center gap-1.5"><span className="size-2.5 rounded-full" style={{ background: PIN[k] }} /> {l}</span>
+              {Object.entries(PIN_OF).map(([s, c]) => (
+                <span key={s} className="flex items-center gap-1.5"><span className="size-2.5 rounded-full" style={{ background: c }} /> {s}</span>
               ))}
               {shown.some((r) => r.lat == null) && <span className="ml-auto">{shown.filter((r) => r.lat == null).length} not on the map yet: open one and set its pin</span>}
             </p>
