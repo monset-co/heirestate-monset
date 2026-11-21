@@ -66,6 +66,14 @@ const tone = {
   hot: "bg-burgundy/12 text-burgundy",
   warm: "bg-gold/25 text-gold-ink",
   cold: "bg-sky-600/12 text-sky-800",
+  // inventory statuses
+  "inv-sold": "bg-navy text-cream",
+  "inv-rented": "bg-red-600/12 text-red-800",
+  "inv-for-rent": "bg-orange-500/15 text-orange-800",
+  "inv-assume": "bg-yellow-400/30 text-yellow-900",
+  "inv-for-sale": "bg-sky-400/20 text-sky-800",
+  "inv-reserved": "bg-zinc-500/15 text-zinc-700",
+  "inv-unavailable": "bg-neutral-900 text-white",
 };
 export function Badge({ value, children }) {
   return (
