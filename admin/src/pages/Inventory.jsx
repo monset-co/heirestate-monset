@@ -1,7 +1,7 @@
 // Inventory: every property the team can offer, from owners and other brokers (supabase/migrations
 // …_inventory.sql), in tabs for pre-selling, rentals and sales. Not the public listings: nothing here
 // shows on a site. A row opens its full record to read, copy the post summary from, or edit.
-import { Copy, ExternalLink, Globe, MapPin, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, ExternalLink, Globe, MapPin, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Chip } from "./Matches";
 import { AREAS, inArea, LANDMARK, LANDMARKS, RADII, distance } from "../match";
 // the map (Leaflet, ~45 KB) loads when one is first shown, not with the table
@@ -28,7 +28,7 @@ const TABS = [
   { id: "rentals", label: "Rentals", has: ["For Rent", "Rented"], start: ["For Rent"] },
   { id: "sale", label: "For sale", has: ["For Sale", "Sold", "For Assume"], start: ["For Sale"] },
 ];
-const TONE = { "Pre-selling": "new", "For Rent": "available", "For Sale": "available", "For Assume": "reserved", Reserved: "reserved", Rented: "lost", Sold: "sold", Unavailable: "hidden" };
+const TONE = { "Pre-selling": "new", "For Rent": "inv-for-rent", "For Sale": "inv-for-sale", "For Assume": "inv-assume", Reserved: "inv-reserved", Rented: "inv-rented", Sold: "inv-sold", Unavailable: "inv-unavailable" };
 const OPEN = ["Pre-selling", "For Rent", "For Sale", "For Assume"]; // still on offer
 // a pin's colour on the map, by what's happening with it (the legend under the map says so)
 const pinOf = (r) => (r.status.includes("Pre-selling") ? PIN.pre : r.status.some((s) => ["For Rent", "For Sale"].includes(s)) && r.available !== false ? PIN.open : r.status.some((s) => ["Reserved", "For Assume"].includes(s)) ? PIN.held : PIN.gone);
@@ -96,6 +96,11 @@ export default function Inventory() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, dq, tab.id]);
   const set = (k) => (e) => setQ({ ...q, [k]: e.target.value });
+  // which filters are narrowing the list: those stand out, the rest sit gray at their defaults
+  const on = { status: !["open", ""].includes(q.status), max: !!q.max.trim(), where: !!q.where, building: !!q.building, furnishing: !!q.furnishing, when: !!q.when, near: !!q.near, pets: q.pets };
+  const active = Object.values(on).filter(Boolean).length;
+  const f = (isOn) => (isOn ? `${input} border-navy! font-medium` : `${input} bg-sunken! text-muted!`);
+  const [filters, setFilters] = useState(false); // phones: filters shown
 
   const saved = (row, gone) => {
     setList((all) => (gone ? all.filter((r) => r.id !== row.id) : all.some((r) => r.id === row.id) ? all.map((r) => (r.id === row.id ? row : r)) : [row, ...all]));
@@ -120,7 +125,8 @@ export default function Inventory() {
       </div>
 
       <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-        <label className="relative sm:max-w-xs sm:flex-1">
+        <div className="flex gap-3 sm:max-w-xs sm:flex-1">
+        <label className="relative min-w-0 flex-1">
           <span className="sr-only">Search inventory</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" aria-hidden />
           <input type="search" placeholder="Search place, type, owner, code…" value={q.text} onChange={(e) => {
@@ -131,52 +137,66 @@ export default function Inventory() {
             } else setQ({ ...q, text: e.target.value });
           }} className={`${input} pl-9`} />
         </label>
-        <Select aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${input} sm:w-48`}>
+        {/* phones: the filters fold away behind this, with a count of the ones in use */}
+        <button
+          type="button"
+          onClick={() => setFilters((f) => !f)}
+          aria-expanded={filters}
+          aria-controls="inv-filters inv-filters-more"
+          className={`press relative inline-flex h-10 shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm font-medium sm:hidden ${filters || active ? "border-navy text-fg" : "border-line text-muted"}`}
+        >
+          <SlidersHorizontal className="size-4" aria-hidden /> Filters
+          {active > 0 && <span className="grid size-5 place-items-center rounded-full bg-navy text-[0.7rem] text-cream tabular-nums">{active}</span>}
+        </button>
+        </div>
+        <div id="inv-filters" className={`flex-col gap-3 sm:flex sm:flex-row ${filters ? "flex" : "hidden"}`}>
+        <Select aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${f(on.status)} sm:w-48`}>
           <option value="open">Still available</option>
           <option value="">Every status</option>
           <option value="both">For rent and for sale</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </Select>
-        <input aria-label="Highest price" inputMode="numeric" placeholder="Up to ₱ (their budget)" value={q.max} onChange={set("max")} className={`${input} sm:w-48`} />
+        <input aria-label="Highest price" inputMode="numeric" placeholder="Up to ₱ (their budget)" value={q.max} onChange={set("max")} className={`${f(on.max)} sm:w-48`} />
+        </div>
       </div>
-      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+      <div id="inv-filters-more" className={`mt-3 flex-col gap-3 sm:flex sm:flex-row sm:flex-wrap sm:items-center ${filters ? "flex" : "hidden"}`}>
         <Select
           aria-label="Filter by area"
           value={q.where}
           // a building outside the new area would hide everything: let it go
           onChange={(e) => setQ({ ...q, where: e.target.value, building: !q.building || !e.target.value || list?.some((r) => r.building === q.building && inArea(e.target.value, r)) ? q.building : "" })}
-          className={`${input} sm:w-60`}
+          className={`${f(on.where)} sm:w-60`}
         >
           <option value="">Anywhere</option>
           {Object.entries(AREAS).map(([g, list]) => (
             <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>{k}</option>)}</optgroup>
           ))}
         </Select>
-        <Select aria-label="Filter by building" value={q.building} onChange={set("building")} className={`${input} sm:w-60`}>
+        <Select aria-label="Filter by building" value={q.building} onChange={set("building")} className={`${f(on.building)} sm:w-60`}>
           <option value="">Any building</option>
           {buildingsHere.map((b) => <option key={b} value={b}>{b}</option>)}
         </Select>
-        <Select aria-label="Filter by furnishing" value={q.furnishing} onChange={set("furnishing")} className={`${input} sm:w-48`}>
+        <Select aria-label="Filter by furnishing" value={q.furnishing} onChange={set("furnishing")} className={`${f(on.furnishing)} sm:w-48`}>
           <option value="">Any furnishing</option>
           {FURNISHING.slice(1).map((o) => <option key={o} value={o}>{o}</option>)}
         </Select>
-        <Select aria-label="Filter by when it's free" value={q.when} onChange={set("when")} className={`${input} sm:w-56`}>
+        <Select aria-label="Filter by when it's free" value={q.when} onChange={set("when")} className={`${f(on.when)} sm:w-56`}>
           <option value="">Free any time</option>
           <option value="now">Available now</option>
           <option value="later">To be available (has a date)</option>
         </Select>
-        <Select aria-label="Near a place" value={q.near} onChange={set("near")} className={`${input} sm:w-60`}>
+        <Select aria-label="Near a place" value={q.near} onChange={set("near")} className={`${f(on.near)} sm:w-60`}>
           <option value="">Near anywhere</option>
           {Object.entries(LANDMARKS).map(([g, list]) => (
             <optgroup key={g} label={g}>{Object.keys(list).map((k) => <option key={k} value={k}>Near {k}</option>)}</optgroup>
           ))}
         </Select>
         {q.near && (
-          <Select aria-label="Within" value={q.km} onChange={set("km")} className={`${input} sm:w-32`}>
+          <Select aria-label="Within" value={q.km} onChange={set("km")} className={`${f(true)} sm:w-32`}>
             {RADII.map((k) => <option key={k} value={String(k)}>within {k < 1 ? `${k * 1000} m` : `${k} km`}</option>)}
           </Select>
         )}
-        <label className="flex items-center gap-2 text-sm whitespace-nowrap">
+        <label className={`flex items-center gap-2 text-sm whitespace-nowrap ${q.pets ? "font-medium text-fg" : "text-muted"}`}>
           <input type="checkbox" checked={q.pets} onChange={(e) => setQ({ ...q, pets: e.target.checked })} className="size-4 accent-navy" /> Pet-friendly only
         </label>
       </div>
@@ -193,11 +213,7 @@ export default function Inventory() {
         </div>
         {/* the legend: what the status colours mean */}
         <p className="ml-auto flex flex-wrap items-center gap-1.5 text-xs text-muted" aria-label="Legend">
-          <Badge value="available">On offer</Badge>
-          <Badge value="new">Pre-selling</Badge>
-          <Badge value="reserved">Reserved or assume</Badge>
-          <Badge value="lost">Rented</Badge>
-          <Badge value="sold">Sold</Badge>
+          {STATUSES.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>)}
           <Badge value="draft">From a date</Badge>
         </p>
       </div>
