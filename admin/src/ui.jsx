@@ -74,6 +74,7 @@ const tone = {
   warm: "bg-gold/25 text-gold-ink",
   cold: "bg-sky-600/12 text-sky-800",
   // inventory statuses
+  "inv-pre": "bg-emerald-600/15 text-emerald-800",
   "inv-sold": "bg-navy text-cream",
   "inv-rented": "bg-red-600/12 text-red-800",
   "inv-for-rent": "bg-orange-500/15 text-orange-800",
