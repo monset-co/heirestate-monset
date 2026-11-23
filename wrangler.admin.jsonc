@@ -24,6 +24,14 @@
     "run_worker_first": ["/api/*"],
     "not_found_handling": "single-page-application"
   },
+  // The Worker runs from Singapore, not whichever data centre is nearest the person. Google won't
+  // serve Gemini to some of them (Hong Kong, for one), so Mons failed for people whose internet
+  // routes there. Only /api/* runs the Worker; the pages themselves are still served nearby.
+  "placement": { "mode": "targeted", "region": "gcp:asia-southeast1" },
+  // Mons's memory (admin/worker/memory.js): embeddings from Workers AI, kept in a Vectorize index
+  // made once with: npx wrangler vectorize create heirestates-mons --dimensions=1024 --metric=cosine
+  "ai": { "binding": "AI" },
+  "vectorize": [{ "binding": "MEMORY", "index_name": "heirestates-mons" }],
   // reminders that have come due are emailed within 15 minutes
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {

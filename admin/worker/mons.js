@@ -8,6 +8,8 @@
 import { db } from "./supabase.js";
 import * as google from "./google.js";
 import { notify } from "./push.js";
+import { recall } from "./memory.js";
+import { WISHES, matches, tidyMobile } from "../src/match.js";
 
 const TZ = "Asia/Manila";
 const ROUNDS = 6; // tool calls per answer at most, so a confused model can't loop up a bill
@@ -27,11 +29,13 @@ const json = (data, status = 200) => Response.json(data, { status, headers: { "C
 export const term = (s) => String(s ?? "").replace(/[,()*\\:"']/g, " ").trim().slice(0, 80);
 const like = (cols, s) => `or=(${cols.map((c) => `${c}.ilike.*${q(s)}*`).join(",")})`;
 
-export function persona({ me, team, now }) {
+// The same for every request (no time, no asker), so Gemini's implicit cache can reuse it and the
+// tool list after it: cached tokens cost a fraction. Who's asking and when rides on their message.
+export function persona({ team }) {
   return `You are Mons, the personal assistant inside the Heir Estates admin, a real estate brokerage in Metro Cebu, Philippines.
 You are a secretary: warm, eager to help and thoroughly professional. Short, clear answers, like a capable assistant messaging her boss. Mirror the language you're written in (English, Tagalog, Cebuano or a mix).
 
-It is ${now} in Manila. You're talking with ${me.name} (${me.email}). This is the team's shared chat, so each message says who wrote it.
+This is the team's shared chat, so each message says who wrote it. The newest message starts with the current Manila time and who is asking, in brackets: that is who you're talking with now.
 The team: ${team.map((t) => `${t.name} <${t.email}>`).join("; ")}.
 
 How you work:
@@ -41,7 +45,9 @@ How you work:
 - Format for a chat bubble: short lines, "- " bullets, **bold** sparingly. No headings, tables or dividers.
 - Peso amounts as ₱1,234,567. Dates in plain words ("Fri 28 Nov, 3pm").
 - For a debriefing, cover: reminders due or overdue, today's and tomorrow's bookings, hot and reserved leads, and tasks that are urgent or due.
-- You can act. Small things you do straight away when asked: add a note, a reminder or a task, tick a reminder or task off, set hot/warm/cold. Bigger things you propose and a person confirms with a button under your message: changing a stage, reassigning the agent, booking on the calendar. Say plainly what you did, and what is waiting for their Confirm.
+- You can act. Small things you do straight away when asked: add a note, a reminder or a task, tick a reminder or task off, set hot/warm/cold, add properties to the inventory, add a new lead. Bigger things you propose and a person confirms with a button under your message: changing a stage, reassigning the agent, booking on the calendar, changing a property's details, changing a lead's details. Say plainly what you did, and what is waiting for their Confirm.
+- Listings pasted in to add: one inventory item per property. Copy what's written, never fill gaps with guesses; prices as whole pesos (₱35k = 35000). Before adding, search the inventory for each building and unit: if one looks already there, ask instead of adding a second. After adding, say which details were missing.
+- To change a property or a lead, find its id first (search_inventory, search_leads), then send only the fields that change. Deleting isn't something you do: point them to the Inventory or lead page.
 - Only act on what you were asked. If something you need is unclear (which lead, what time), ask first instead of guessing. Never say something is done unless the tool said so.
 - Times you pass to tools are Manila time, written YYYY-MM-DDTHH:MM. "Tomorrow morning" with no time given: 9:00. A viewing with no length given: one hour.
 - A task with no person named is the asker's own (assignee_email = their email). "Anyone" means no assignee.
@@ -49,9 +55,79 @@ How you work:
 }
 
 // what she may do herself, and what waits for Confirm
-const SMALL = ["add_note", "add_reminder", "complete_reminder", "add_task", "complete_task", "set_temperature"];
-const BIG = ["set_stage", "assign_agent", "book"];
+const SMALL = ["add_note", "add_reminder", "complete_reminder", "add_task", "complete_task", "set_temperature", "add_inventory", "add_lead"];
+const BIG = ["set_stage", "assign_agent", "book", "update_inventory", "update_lead"];
 const WRITES = 10; // changes and proposals in one answer at most
+const MAX_ADD = 25; // listings in one add_inventory
+
+// the inventory fields she may fill in or change (the rest, like posting links and the map pin,
+// stay on the Inventory page); the database's own checks have the last word
+const s = (description) => ({ type: "string", ...(description && { description }) });
+const INV_PROPS = {
+  status: { type: "array", items: { type: "string", enum: INV_STATUS } },
+  type: s("e.g. 'Studio Unit, With balcony', 'House & Lot, 3BR'"),
+  building: s("The building or development's name"),
+  location: s(),
+  price: { type: "integer", description: "Pesos: the sale price, or a month's rent" },
+  price_text: s("Only when the price isn't one number, e.g. 'Rent: ₱35,000 / Sale: ₱5,500,000'"),
+  price_note: s(),
+  available: { type: "boolean" },
+  available_from: s("YYYY-MM-DD"),
+  furnishing: s(),
+  specs: s("Floor area, bedrooms, floor, view"),
+  inclusions: s(),
+  payment_terms: s(),
+  notes: s("Amenities and anything else"),
+  pet_friendly: { type: "string", enum: ["yes", "no", "unconfirmed"] },
+  summary: s("A ready-to-post description"),
+  source: s("The owner or broker it came from"),
+  source_url: s(),
+};
+// a lead's details (stage, agent and hot/warm/cold have their own tools)
+const LEAD_PROPS = {
+  name: s(),
+  mobile: s(),
+  email: s(),
+  interest: s("What they asked about"),
+  budget: s("Their budget in their own words"),
+  budget_max: { type: "integer", description: "Pesos: the most they'll pay (a month, for rentals)" },
+  category: { type: "string", enum: ["pre-selling", "rentals", "brokerage"] },
+  looking_to: { type: "array", items: { type: "string", enum: ["Rent", "Buy resale", "Buy pre-selling", "Assume balance", "Sell or lease out"] } },
+  property_types: { type: "array", items: { type: "string", enum: ["Condo", "House & Lot", "Townhouse", "Lot", "Commercial", "Studio", "1BR", "2BR", "3BR+"] } },
+  areas: { type: "array", items: { type: "string" } },
+  buildings: { type: "array", items: { type: "string" } },
+  furnishings: { type: "array", items: { type: "string", enum: ["Fully furnished", "Furnished", "Semi-furnished", "Finished", "Unfurnished"] } },
+  needed_by: s("YYYY-MM-DD"),
+  viewing_time: s(),
+};
+// where a lead came from (admin/src/crm.js SOURCES), and the Leads sub-tab each wish belongs to
+// (admin/src/pages/LeadForm.jsx KIND_OF)
+const SOURCES = ["whatsapp", "rph", "fh", "facebook", "referral", "walk-in", "other"];
+const KIND_OF = { Rent: "rentals", "Buy resale": "brokerage", "Buy pre-selling": "pre-selling", "Assume balance": "brokerage", "Sell or lease out": "brokerage" };
+// a mobile as the lead form saves it, or a refusal she can pass on
+function mobileOf(raw) {
+  const m = tidyMobile(raw);
+  if (!m) throw fail(`“${raw}” doesn't look like a mobile number`);
+  return m;
+}
+// only known fields; empty strings dropped; null kept on an update, to clear a field
+const pick = (o, props, clear) =>
+  Object.fromEntries(Object.entries(o ?? {}).filter(([k, v]) => k in props && v !== undefined && v !== "" && (clear || v !== null)));
+// "price ₱5,500,000, available yes" for her report and the Confirm button
+const peso = new Intl.NumberFormat("en-PH");
+const listChanges = (c) =>
+  Object.entries(c)
+    .map(([k, v]) => `${k.replace(/_/g, " ")} ${v === null ? "cleared" : Array.isArray(v) ? v.join(", ") || "none" : typeof v === "boolean" ? (v ? "yes" : "no") : /price|budget_max/.test(k) ? `₱${peso.format(v)}` : String(v).slice(0, 60)}`)
+    .join("; ");
+// the database's refusal ("violates check constraint …") as words she can pass on
+function dbSaid(e) {
+  let t = String(e?.message ?? e).replace(/^Supabase [^:]+: \d+ /, "");
+  try {
+    t = JSON.parse(t).message ?? t;
+  } catch {}
+  return fail(t.slice(0, 200));
+}
+const nameOfListing = (r) => [r.type, r.building ?? r.location].filter(Boolean).join(", ") || `listing #${r.id}`;
 
 const ACT_TOOLS = [
   {
@@ -121,6 +197,34 @@ const ACT_TOOLS = [
       required: ["title", "start", "end"],
     },
   },
+  {
+    name: "add_inventory",
+    description: `Add properties to the inventory (up to ${MAX_ADD} at once), e.g. from listings pasted into the chat. Fill in only what the listing says; leave the rest out.`,
+    parameters: { type: "object", properties: { items: { type: "array", items: { type: "object", properties: INV_PROPS } } }, required: ["items"] },
+  },
+  {
+    name: "update_inventory",
+    description: "PROPOSE changing a property's details (price, availability, status, specs…); a person confirms. Send only the fields that change; null clears one.",
+    parameters: { type: "object", properties: { id: { type: "integer" }, changes: { type: "object", properties: INV_PROPS } }, required: ["id", "changes"] },
+  },
+  {
+    name: "add_lead",
+    description: "Add a new lead (a client or inquiry). It's refused if someone with that mobile or email is already a lead; then update that one instead.",
+    parameters: {
+      type: "object",
+      properties: {
+        ...LEAD_PROPS,
+        source_site: { type: "string", enum: SOURCES, description: "Where they came from. Default whatsapp." },
+        message: s("What they wrote or asked, in their words"),
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "update_lead",
+    description: "PROPOSE changing a lead's details (contact details, what they're looking for, budget, areas…); a person confirms. Send only the fields that change; null clears one.",
+    parameters: { type: "object", properties: { lead_id: { type: "integer" }, changes: { type: "object", properties: LEAD_PROPS } }, required: ["lead_id", "changes"] },
+  },
 ];
 
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
@@ -138,6 +242,11 @@ export function actions(env, token, me, team) {
   };
   const person = (email) => team.find((t) => t.email === String(email ?? "").trim().toLowerCase());
   const at = (l) => `/leads/${l.id}`;
+  const listing = async (id) => {
+    const [r] = await u.get(`inventory?select=id,type,building,location&id=eq.${Number(id)}`);
+    if (!r) throw fail(`There's no listing #${id}`);
+    return r;
+  };
   return {
     lead,
     person,
@@ -212,6 +321,57 @@ export function actions(env, token, me, team) {
       if (!r.ok) throw fail(out.error ?? "The calendar refused it");
       return { text: `Booked “${String(b.title).slice(0, 80)}” for ${say(b.start)}`, url: "/calendar" };
     },
+    listing,
+    // one at a time, so one bad row doesn't stop the rest; what failed goes back to her to report
+    async add_inventory({ items }) {
+      const rows = (Array.isArray(items) ? items : []).map((i) => pick(i, INV_PROPS)).filter((r) => Object.keys(r).length);
+      if (!rows.length) throw fail("There was nothing to add");
+      if (rows.length > MAX_ADD) throw fail(`That's more than ${MAX_ADD} listings; add them in parts`);
+      const out = await Promise.allSettled(rows.map((r) => u.insert("inventory", r)));
+      const added = out.filter((o) => o.status === "fulfilled").map((o) => o.value[0]);
+      const failed = out.map((o, i) => o.status === "rejected" && `#${i + 1} (${nameOfListing(rows[i])}): ${dbSaid(o.reason).message}`).filter(Boolean);
+      if (!added.length) throw fail(`None could be added. ${failed.join("; ")}`);
+      const names = added.map(nameOfListing);
+      return {
+        text: `Added ${added.length} listing${added.length > 1 ? "s" : ""} to the inventory: ${names.slice(0, 5).join("; ")}${names.length > 5 ? ` and ${names.length - 5} more` : ""}${failed.length ? `. Not added: ${failed.join("; ")}` : ""}`,
+        url: "/inventory",
+      };
+    },
+    async update_inventory({ id, changes }) {
+      const r = await listing(id);
+      const c = pick(changes, INV_PROPS, true);
+      if (!Object.keys(c).length) throw fail("Nothing to change");
+      await u.update(`inventory?id=eq.${r.id}`, c).catch((e) => Promise.reject(dbSaid(e)));
+      return { text: `Updated ${nameOfListing(r)}: ${listChanges(c)}`, url: "/inventory" };
+    },
+    async add_lead(args) {
+      const row = pick(args, LEAD_PROPS);
+      row.name = String(row.name ?? "").trim();
+      if (row.name.length < 2) throw fail("The lead needs a name");
+      row.mobile = row.mobile ? mobileOf(row.mobile) : ""; // the column can't be empty-null; the form saves "" too
+      if (row.email) row.email = String(row.email).trim().toLowerCase();
+      // the same person twice: the form warns, she stops
+      const d = row.mobile.replace(/\D/g, "").slice(-10);
+      const ors = [d && `mobile.ilike.*${d.split("").join("*")}`, row.email && `email.eq.${q(`"${row.email}"`)}`].filter(Boolean);
+      if (ors.length) {
+        const [same] = await u.get(`leads?select=id,name&or=(${ors.join(",")})&limit=1`);
+        if (same) throw fail(`${same.name} (/leads/${same.id}) is already a lead with that mobile or email`);
+      }
+      row.source_site = SOURCES.includes(args.source_site) ? args.source_site : "whatsapp";
+      if (args.message) row.message = String(args.message).trim().slice(0, 2000);
+      const kinds = (row.looking_to ?? []).map((w) => KIND_OF[w]).filter(Boolean);
+      row.category = row.category ?? kinds[0] ?? "pre-selling";
+      const [l] = await u.insert("leads", row).catch((e) => Promise.reject(dbSaid(e)));
+      return { text: `Added ${l.name} as a new lead`, url: at(l) };
+    },
+    async update_lead({ lead_id, changes }) {
+      const l = await lead(lead_id);
+      const c = pick(changes, LEAD_PROPS, true);
+      if (!Object.keys(c).length) throw fail("Nothing to change");
+      if (c.mobile) c.mobile = mobileOf(c.mobile);
+      await u.update(`leads?id=eq.${l.id}`, c).catch((e) => Promise.reject(dbSaid(e)));
+      return { text: `Updated ${l.name}: ${listChanges(c)}`, url: at(l) };
+    },
   };
 }
 
@@ -221,6 +381,14 @@ async function propose(kind, args, run) {
     const f = google.fields(args);
     if (f.error) throw fail(f.error);
     return { summary: `Book “${String(args.title).slice(0, 80)}”, ${say(args.start)} to ${args.end?.slice(11)}${args.location ? ` at ${args.location}` : ""}`, url: "/calendar" };
+  }
+  if (kind === "update_inventory" || kind === "update_lead") {
+    const inv = kind === "update_inventory";
+    const c = pick(args.changes, inv ? INV_PROPS : LEAD_PROPS, true);
+    if (!Object.keys(c).length) throw fail("Nothing to change");
+    if (c.mobile) c.mobile = mobileOf(c.mobile); // a bad number refused now, not at Confirm
+    const r = inv ? await run.listing(args.id) : await run.lead(args.lead_id);
+    return { summary: `Change ${inv ? nameOfListing(r) : r.name}: ${listChanges(c)}`, url: inv ? "/inventory" : `/leads/${r.id}` };
   }
   const l = await run.lead(args.lead_id);
   if (kind === "set_stage") {
@@ -268,6 +436,17 @@ const TOOLS = [
         limit: { type: "integer", description: "Default 15, at most 40" },
       },
     },
+  },
+  {
+    name: "search_memory",
+    description:
+      "Search lead notes, WhatsApp messages and what leads first wrote by meaning, not exact words, in any language: 'who mentioned pets', 'clients worried about parking', 'someone asked about a unit near Ayala'. Best matches first; 'match' near 1 is close. For one known lead, get_lead is better.",
+    parameters: { type: "object", properties: { question: { type: "string" }, limit: { type: "integer", description: "Default 10, at most 20" } }, required: ["question"] },
+  },
+  {
+    name: "match_listings",
+    description: "The properties on offer that best fit one lead's wishes (kind, size, area, building, near a landmark, furnishing, budget, when), best first, with which wishes each meets and misses. Use this for 'what do we have for <client>?'.",
+    parameters: { type: "object", properties: { lead_id: { type: "integer" }, limit: { type: "integer", description: "Default 8, at most 20" } }, required: ["lead_id"] },
   },
   {
     name: "list_reminders",
@@ -342,6 +521,31 @@ function tools(env, token, team) {
         ? (await u.get(`wa_messages?select=direction,body,type,created_at&thread_id=eq.${threads[0].id}&order=created_at.desc&limit=10`)).reverse()
         : [];
       return { ...lead, agent: agentName(lead.agent_id), notes, reminders, papers: checklist, files, whatsapp: wa };
+    },
+    search_memory: ({ question, limit }) => recall(env, u, String(question ?? "").slice(0, 500), limit),
+    // the Matches tab's own scoring (admin/src/match.js), so she and the page agree
+    async match_listings({ lead_id, limit }) {
+      const [[lead], inventory] = await Promise.all([
+        u.get(`leads?select=id,name,looking_to,property_types,areas,buildings,near,near_km,furnishings,budget_max,needed_by,priorities&id=eq.${Number(lead_id)}`),
+        u.get("inventory?select=id,status,type,location,building,lat,lng,furnishing,price,price_text,available,available_from&limit=2000"),
+      ]);
+      if (!lead) return { error: `No lead #${lead_id}` };
+      const hits = matches(lead, inventory, clamp(limit, 8, 20));
+      if (!hits.length) return { lead: lead.name, matches: [], note: "Nothing on offer fits what they're looking for. Check the lead's wishes are filled in." };
+      return {
+        lead: lead.name,
+        matches: hits.map(({ p, f }) => ({
+          id: p.id,
+          type: p.type,
+          building: p.building,
+          location: p.location,
+          price: p.price_text ?? p.price,
+          status: p.status,
+          meets: WISHES.filter((k) => f[k] === true),
+          misses: WISHES.filter((k) => f[k] === false),
+          ...(f.km != null && { km: Math.round(f.km * 10) / 10 }),
+        })),
+      };
     },
     async search_inventory({ text, status, min_price, max_price, limit }) {
       const f = ["select=id,status,type,location,building,price,price_text,available,available_from,furnishing,specs,pet_friendly,summary", "order=updated_at.desc", `limit=${clamp(limit, 15, 40)}`];
@@ -468,8 +672,8 @@ export async function chat(req, env, me, token) {
   const contents = earlier
     .reverse()
     .map((m) => (m.from_mons ? { role: "model", parts: [{ text: recall(m) }] } : { role: "user", parts: [{ text: `${nameOf(m.author)}: ${m.body}` }] }));
-  contents.push({ role: "user", parts: [{ text: `${me.admin.name}: ${said}` }] });
   const now = new Date().toLocaleString("en-PH", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
+  contents.push({ role: "user", parts: [{ text: `[${now} · asking: ${me.admin.name} <${me.email}>]\n${me.admin.name}: ${said}` }] });
 
   // her tools: the lookups, then the changes, which are written down as they happen
   const changes = [];
@@ -495,10 +699,12 @@ export async function chat(req, env, me, token) {
   let reply;
   const usage = { tokens: 0 };
   try {
-    reply = await answer(env, { system: persona({ me: { name: me.admin.name, email: me.email }, team, now }), contents, run, usage });
+    reply = await answer(env, { system: persona({ team }), contents, run, usage });
   } catch (e) {
     console.error("mons", e);
-    reply = changes.length ? "I made the changes below, then lost my connection before I could finish. Please check them." : "I'm sorry, I couldn't reach my thinking just now. Please try again in a moment.";
+    // the reason, short, so a failure that only some people get can be told apart from Google being down
+    const why = /location is not supported/i.test(e.message) ? "Google refused the server region this went through" : String(e.message).slice(0, 120);
+    reply = `${changes.length ? "I made the changes below, then lost my connection before I could finish. Please check them." : "I'm sorry, I couldn't reach my thinking just now. Please try again in a moment."}\n\n(${why})`;
   }
   const [hers] = await u.insert("mons_messages", { from_mons: true, body: reply.slice(0, 20000), changes, proposals, tokens: usage.tokens });
   return json({ messages: [mine, hers] });

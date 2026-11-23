@@ -69,6 +69,28 @@ function Proposal({ p, onAnswer }) {
   );
 }
 
+// While she works: three bouncing dots and a line that moves on every couple of seconds
+const THINKING = ["Mons is thinking", "Looking it up", "Checking the records", "Putting it together"];
+function Typing() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((n) => Math.min(n + 1, THINKING.length - 1)), 2500);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <p className="flex items-center gap-2 rounded-xl rounded-bl-sm border border-gold/40 bg-surface px-3 py-2 text-sm text-muted" role="status">
+      <span className="flex gap-1" aria-hidden>
+        {[0, 150, 300].map((d) => (
+          <span key={d} className="size-1.5 rounded-full bg-gold motion-safe:animate-bounce" style={{ animationDelay: `${d}ms` }} />
+        ))}
+      </span>
+      <span key={i} className="motion-safe:animate-[fade-in_300ms_ease-out]">
+        {THINKING[i]}…
+      </span>
+    </p>
+  );
+}
+
 export default function Mons() {
   const me = useMe();
   const [msgs, setMsgs] = useState(null);
@@ -193,7 +215,7 @@ export default function Mons() {
         )}
         {busy && (
           <li className="flex justify-start">
-            <p className="rounded-xl rounded-bl-sm border border-gold/40 bg-surface px-3 py-2 text-sm text-muted">Mons is looking into it…</p>
+            <Typing />
           </li>
         )}
         <li ref={end} aria-hidden />
