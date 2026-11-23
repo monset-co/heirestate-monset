@@ -8,9 +8,10 @@
 //   /api/google/*                      Google Calendar bookings, and its Gmail read-only (google.js, gmail.js)
 //   /api/geo?q=…                       where a place is, from OpenStreetMap (for a property's pin)
 //   /api/push/key, /push/task          push notifications: the key to sign up with, a task given (push.js)
+//   /api/mons, /mons/confirm           a message to Mons, the assistant, and her answer; a change she proposed, confirmed (mons.js)
 //   scheduled (every 15 minutes)       emails reminders that have come due; pushes bookings' reminders
 //   PublicApi.inquiry()                saves an inquiry from the public sites and alerts its agent
-// Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN, GOOGLE_CLIENT_SECRET, VAPID_PRIVATE_KEY (wrangler secret put). The rest is in
+// Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN, GOOGLE_CLIENT_SECRET, VAPID_PRIVATE_KEY, GEMINI_API_KEY, CF_AIG_TOKEN (wrangler secret put). The rest is in
 // wrangler.admin.jsonc's vars.
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { db, whoIs } from "./supabase.js";
@@ -20,6 +21,7 @@ import * as whatsapp from "./whatsapp.js";
 import * as google from "./google.js";
 import * as gmail from "./gmail.js";
 import { notify } from "./push.js";
+import * as mons from "./mons.js";
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 const fail = (error, status = 400) => json({ error }, status);
@@ -291,6 +293,8 @@ export default {
       if (path === "push/key" && req.method === "GET") return json({ key: env.VAPID_PUBLIC_KEY ?? null });
       if (path === "push/task" && req.method === "POST") return await pushTask(req, env, me);
       if (path === "geo" && req.method === "GET") return await geo(url.searchParams.get("q"));
+      if (path === "mons" && req.method === "POST") return await mons.chat(req, env, me, req.headers.get("Authorization").replace(/^Bearer /, ""));
+      if (path === "mons/confirm" && req.method === "POST") return await mons.confirm(req, env, me, req.headers.get("Authorization").replace(/^Bearer /, ""));
       if (path === "visits" && req.method === "GET") {
         const days = [7, 30, 90].includes(Number(url.searchParams.get("days"))) ? Number(url.searchParams.get("days")) : 30;
         if (!env.CF_API_TOKEN || !env.CF_ACCOUNT_ID) return fail("Site visits aren't set up yet (CF_API_TOKEN, CF_ACCOUNT_ID)", 501);

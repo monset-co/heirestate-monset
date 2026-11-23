@@ -28,6 +28,9 @@
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {
     "SUPABASE_URL": "https://rqspfymfujfimljgilid.supabase.co",
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_UZLXN7SPtreNz2-ZVzoijA_px4mvXhN",
+    "AI_GATEWAY": "default",
+    "MONS_MODEL": "gemini-3.8-flash",
     "DOMAIN": "heirestates.com",
     "ADMIN_URL": "https://admin.heirestates.com",
     // a verified sender on heirestates.com in Resend

@@ -105,6 +105,18 @@ const SECTIONS = [
     ],
   },
   {
+    id: "mons",
+    title: "Mons, your assistant",
+    body: [
+      "Mons is in the menu. Message her as you would on Messenger: \"Brief me on today\", \"Which hot leads need a follow-up?\", \"Any 2BR for rent in IT Park under ₱30,000?\", \"What's on the calendar this week?\"",
+      "She looks up the leads, inventory, reminders, tasks, calendar bookings and document names before she answers, so what she says is as fresh as the admin. Tap a lead's name in her answer to open it.",
+      "The whole team shares one chat with her for now, so everyone sees what was asked and answered.",
+      "Small things she does straight away: adding a note, a reminder or a task, ticking one off, and tagging a lead hot, warm or cold. Everything she changed is listed under her message, each line a link to it.",
+      "Bigger things she only proposes: moving a lead's stage, giving it to another agent, and booking on the calendar. Press Confirm under her message to do it, or Not now. Whoever presses Confirm is the one the activity log records.",
+      "Drafting replies and templates from your documents, and a morning briefing at 8, are coming next.",
+    ],
+  },
+  {
     id: "more",
     title: "Listings, commissions and the rest",
     body: [

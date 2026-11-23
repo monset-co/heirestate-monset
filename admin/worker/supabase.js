@@ -7,12 +7,15 @@ function headers(key) {
   return { apikey: key, ...(key.startsWith("eyJ") && { Authorization: `Bearer ${key}` }) };
 }
 
-export function db(env) {
+// With a token, it acts as that signed-in person instead: their row-level security, their name in
+// the activity log (Mons reads and writes this way).
+export function db(env, token) {
   const base = `${env.SUPABASE_URL}/rest/v1`;
+  const who = token ? { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` } : headers(env.SUPABASE_SECRET_KEY);
   const call = async (path, init = {}) => {
     const r = await fetch(`${base}/${path}`, {
       ...init,
-      headers: { ...headers(env.SUPABASE_SECRET_KEY), "Content-Type": "application/json", Prefer: "return=representation", ...init.headers },
+      headers: { ...who, "Content-Type": "application/json", Prefer: "return=representation", ...init.headers },
     });
     if (!r.ok) throw new Error(`Supabase ${init.method ?? "GET"} ${path.split("?")[0]}: ${r.status} ${await r.text()}`);
     return r.status === 204 ? null : r.json();

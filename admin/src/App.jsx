@@ -22,6 +22,7 @@ const Inventory = lazy(() => import("./pages/Inventory"));
 const Email = lazy(() => import("./pages/Email"));
 const Notes = lazy(() => import("./pages/Notes"));
 const Library = lazy(() => import("./pages/Library"));
+const Mons = lazy(() => import("./pages/Mons"));
 
 // pages load when first opened, so the phone downloads the dashboard first, not the whole admin
 const router = createBrowserRouter([
@@ -46,6 +47,7 @@ const router = createBrowserRouter([
       { path: "users", element: <Users /> },
       { path: "settings", element: <Settings /> },
       { path: "guide", element: <Guide /> },
+      { path: "mons", element: <Mons /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

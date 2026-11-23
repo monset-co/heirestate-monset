@@ -3,7 +3,7 @@
 // tab grows into a labelled pill, with everything else under More, a bottom sheet the page eases
 // back behind. Each page rises in on navigation.
 import Bell from "./Bell";
-import { BookOpen, Boxes, FolderOpen, Presentation, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, Plus, Sparkles, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
+import { BookOpen, BotMessageSquare, Boxes, FolderOpen, Presentation, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, Plus, Sparkles, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
 import { AnimatePresence, m as motion } from "motion/react";
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
@@ -17,7 +17,13 @@ import Rail, { useSlim } from "./Rail";
 // Grouped by what each page is for. tab: on the phone tab bar (the rest live under More);
 // quick: its place in the thumb ring
 export const groups = [
-  { name: null, items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard, tab: true }] },
+  {
+    name: null,
+    items: [
+      { to: "/", label: "Dashboard", icon: LayoutDashboard, tab: true },
+      { to: "/mons", label: "Mons", icon: BotMessageSquare },
+    ],
+  },
   {
     name: "Clients",
     items: [
