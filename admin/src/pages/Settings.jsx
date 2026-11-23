@@ -6,8 +6,9 @@ import { Skeleton, toast } from "../motion";
 import { ErrorNote, Field, PageHeader, btn, btnGhost, card, input, Select } from "../ui";
 import { toCsv, download } from "../csv";
 import { usePush } from "../push";
+import MonsUsage from "../MonsUsage";
 
-const KEYS = ["contract_effective_date", "broker_name", "broker_prc_no", "broker_prc_valid_until", "broker_firm", "default_agent_id"];
+const KEYS = ["contract_effective_date", "broker_name", "broker_prc_no", "broker_prc_valid_until", "broker_firm", "default_agent_id", "mons_monthly_tokens"];
 
 // Installing the admin as an app, with the steps for each kind of device; this device's first
 const STEPS = {
@@ -188,6 +189,13 @@ export default function Settings() {
           <Field label="Brokerage">
             <input value={s.broker_firm} onChange={set("broker_firm")} maxLength={120} className={input} />
           </Field>
+        </Section>
+
+        <Section title="Mons">
+          <Field label="Monthly token limit" hint="Mons stops answering once her replies this month have used this many Gemini tokens. Empty: 5,000,000.">
+            <input type="number" min="100000" step="100000" inputMode="numeric" value={s.mons_monthly_tokens} onChange={set("mons_monthly_tokens")} placeholder="5000000" className={`${input} tabular-nums`} />
+          </Field>
+          <MonsUsage className="sm:col-span-2" />
         </Section>
 
         <Section title="Inquiries">

@@ -103,7 +103,10 @@ export function Chat({ thread, onChange }) {
     if (thread.unread > 0) run(supabase.from("wa_threads").update({ unread: 0 }).eq("id", thread.id)).then(() => onChange({ id: thread.id, unread: 0 }), () => {});
   }, [thread.unread]);
 
-  useLayoutEffect(() => end.current?.scrollIntoView({ block: "end" }), [msgs?.length]);
+  // braces: Chrome's scrollIntoView now returns a Promise, which React would call as the cleanup
+  useLayoutEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [msgs?.length]);
 
   async function send(e) {
     e?.preventDefault();

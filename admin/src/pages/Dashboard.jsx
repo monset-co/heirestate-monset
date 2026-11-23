@@ -11,6 +11,7 @@ import { LOOKING_TO, tidyMobile } from "../match";
 import { device } from "../install";
 import { pushSupported, usePush } from "../push";
 import { SameLead, kindFor, useSameLead } from "./LeadForm";
+import MonsUsage from "../MonsUsage";
 
 const manila = (opts) => new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", ...opts });
 
@@ -83,6 +84,8 @@ export default function Dashboard() {
           )
         )}
       </dl>
+
+      <MonsUsage className="mt-4 max-w-md" />
 
       {/* the day first (what's booked and due, then who's waiting), the pipeline beside it */}
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">

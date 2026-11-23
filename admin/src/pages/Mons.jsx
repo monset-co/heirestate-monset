@@ -10,6 +10,7 @@ import { useMe } from "../me";
 import { SkeletonRows } from "../motion";
 import { ErrorNote, btn, btnGhost, card, input } from "../ui";
 import { when } from "../crm";
+import MonsUsage from "../MonsUsage";
 
 const merge = (list, row) => [...list.filter((x) => x.id !== row.id), row].sort((a, b) => a.created_at.localeCompare(b.created_at));
 const STARTERS = ["Brief me on today", "Which hot leads need a follow-up?", "Any 2BR for rent under ₱30,000?", "What's on the calendar this week?"];
@@ -88,7 +89,10 @@ export default function Mons() {
     return () => supabase.removeChannel(ch);
   }, []);
 
-  useLayoutEffect(() => end.current?.scrollIntoView({ block: "end" }), [msgs?.length, busy]);
+  // braces: Chrome's scrollIntoView now returns a Promise, which React would call as the cleanup
+  useLayoutEffect(() => {
+    end.current?.scrollIntoView({ block: "end" });
+  }, [msgs?.length, busy]);
 
   async function send(e, said = text) {
     e?.preventDefault();
@@ -124,14 +128,15 @@ export default function Mons() {
       aria-label="Mons"
       className={`${card} flex h-[calc(100dvh-var(--tabbar-h)-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem)] min-h-[26rem] flex-col overflow-hidden md:h-[calc(100dvh-5rem)]`}
     >
-      <header className="flex items-center gap-3 border-b border-line px-4 py-3">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3">
         <span className="grid size-10 place-items-center rounded-full bg-navy text-gold" aria-hidden>
           <Sparkles className="size-5" />
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="font-display text-xl text-ink">Mons</h1>
           <p className="text-xs text-muted">Your assistant. She looks things up and handles notes, reminders and tasks; bigger changes wait for your Confirm. The whole team shares this chat.</p>
         </div>
+        <MonsUsage className="w-full sm:w-64" />
       </header>
 
       <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-bg/60 px-3 py-4 sm:px-5" aria-live="polite">

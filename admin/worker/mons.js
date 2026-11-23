@@ -17,6 +17,10 @@ const q = encodeURIComponent;
 const OPEN = ["new", "contacted", "viewing", "reserved"];
 const INV_STATUS = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
 
+// her monthly token cap: the mons_monthly_tokens setting, else 5 million
+export const DEFAULT_CAP = 5_000_000;
+export const monthlyCap = (v) => (Number(v) > 0 ? Math.floor(Number(v)) : DEFAULT_CAP);
+
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store" } });
 
 // words someone typed, made safe inside a PostgREST or=(…) filter
@@ -400,7 +404,8 @@ async function gemini(env, body) {
 }
 
 // The talk: ask, let her call tools until she has an answer, return her words.
-export async function answer(env, { system, contents, run }) {
+// usage.tokens adds up what each round cost, even if a later round fails.
+export async function answer(env, { system, contents, run, usage = { tokens: 0 } }) {
   const body = (c) => ({
     system_instruction: { parts: [{ text: system }] },
     contents: c,
@@ -409,6 +414,7 @@ export async function answer(env, { system, contents, run }) {
   });
   for (let round = 0; round < ROUNDS; round++) {
     const out = await gemini(env, body(contents));
+    usage.tokens += out.usageMetadata?.totalTokenCount ?? 0;
     const content = out.candidates?.[0]?.content;
     const parts = content?.parts ?? [];
     const calls = parts.filter((p) => p.functionCall);
@@ -440,11 +446,21 @@ export async function chat(req, env, me, token) {
   const said = String(text ?? "").trim();
   if (!said || said.length > 4000) return json({ error: "Write a message (up to 4,000 characters)" }, 400);
   const u = db(env, token);
-  const [team, earlier] = await Promise.all([
+  const [team, earlier, used, [cap]] = await Promise.all([
     u.get("admin_users?select=id,name,email&active=eq.true&order=name"),
     u.get(`mons_messages?select=from_mons,author,body,changes,proposals&order=created_at.desc&limit=${HISTORY}`),
+    u.call("rpc/mons_tokens_this_month", { method: "POST", body: "{}" }),
+    u.get("settings?select=value&key=eq.mons_monthly_tokens"),
   ]);
   const [mine] = await u.insert("mons_messages", { body: said });
+  // the month's cap: past it she says so instead of answering, until the 1st or a higher cap
+  if (Number(used) >= monthlyCap(cap?.value)) {
+    const [hers] = await u.insert("mons_messages", {
+      from_mons: true,
+      body: "I'm sorry, I've used this month's allowance and have to stop here until the 1st. An admin can raise my monthly limit in Settings.",
+    });
+    return json({ messages: [mine, hers] });
+  }
   const nameOf = (email) => team.find((t) => t.email === email)?.name ?? email;
   // her earlier replies carry what she did and proposed, so she remembers it
   const recall = (m) =>
@@ -477,13 +493,14 @@ export async function chat(req, env, me, token) {
     };
 
   let reply;
+  const usage = { tokens: 0 };
   try {
-    reply = await answer(env, { system: persona({ me: { name: me.admin.name, email: me.email }, team, now }), contents, run });
+    reply = await answer(env, { system: persona({ me: { name: me.admin.name, email: me.email }, team, now }), contents, run, usage });
   } catch (e) {
     console.error("mons", e);
     reply = changes.length ? "I made the changes below, then lost my connection before I could finish. Please check them." : "I'm sorry, I couldn't reach my thinking just now. Please try again in a moment.";
   }
-  const [hers] = await u.insert("mons_messages", { from_mons: true, body: reply.slice(0, 20000), changes, proposals });
+  const [hers] = await u.insert("mons_messages", { from_mons: true, body: reply.slice(0, 20000), changes, proposals, tokens: usage.tokens });
   return json({ messages: [mine, hers] });
 }
 
