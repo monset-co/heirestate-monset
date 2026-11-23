@@ -30,8 +30,9 @@
   "placement": { "mode": "targeted", "region": "gcp:asia-southeast1" },
   // Mons's memory (admin/worker/memory.js): embeddings from Workers AI, kept in a Vectorize index
   // made once with: npx wrangler vectorize create heirestates-mons --dimensions=1024 --metric=cosine
+  // then add: "vectorize": [{ "binding": "MEMORY", "index_name": "heirestates-mons" }],
+  // (a deploy fails while the index doesn't exist; without it Mons says search by meaning isn't set up)
   "ai": { "binding": "AI" },
-  "vectorize": [{ "binding": "MEMORY", "index_name": "heirestates-mons" }],
   // reminders that have come due are emailed within 15 minutes
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {
