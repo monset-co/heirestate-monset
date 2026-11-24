@@ -19,3 +19,8 @@ __pycache__/
 
 # made by scripts/knowledge_to_sql.py, pasted into Supabase
 knowledge-load.sql
+
+# local working files: the client brochure, the knowledge graph, Supabase CLI state
+*-Monset-Client-Brochure.pdf
+graphify-out/
+supabase/.temp/

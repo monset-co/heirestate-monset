@@ -126,5 +126,15 @@ export async function media(env, id) {
   const info = await fetch(graph(env, q(id)), { headers: auth }).then((r) => (r.ok ? r.json() : null));
   if (!info?.url) return new Response("WhatsApp no longer has this file", { status: 410 });
   const file = await fetch(info.url, { headers: auth });
-  return new Response(file.body, { headers: { "Content-Type": info.mime_type ?? "application/octet-stream", "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox" } });
+  const type = info.mime_type ?? "application/octet-stream";
+  return new Response(file.body, {
+    headers: {
+      "Content-Type": type,
+      // pictures show in the chat; anything else (whatever the sender called it) downloads, never renders
+      ...(!type.startsWith("image/") && { "Content-Disposition": "attachment" }),
+      "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox",
+    },
+  });
 }

@@ -36,18 +36,7 @@
     <!-- The first open on a device plays the logo's build (3.9s); after that the finished logo shows
          only until the app is ready. App.jsx fades it out (hideSplash). -->
     <div id="splash" role="status" aria-label="Loading Heir Estates"><img alt="" /></div>
-    <script>
-      (function () {
-        var first = true;
-        try {
-          first = !localStorage.getItem("heir-admin-intro") && !matchMedia("(prefers-reduced-motion: reduce)").matches;
-          localStorage.setItem("heir-admin-intro", "1");
-        } catch (e) {}
-        var s = document.getElementById("splash");
-        s.firstChild.src = first ? "/loader.svg" : "/logo.svg";
-        s.dataset.until = first ? 3900 : 400;
-      })();
-    </script>
+    <script src="/splash.js"></script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

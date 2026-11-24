@@ -13,7 +13,7 @@ const text = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 export function validate(b) {
   if (!b || typeof b !== "object") return { error: "Send the form again" };
   const lead = {
-    name: text(b.name, 100),
+    name: text(b.name, 100).replace(/[\r\n\t]+/g, " "), // it goes into an email subject
     mobile: text(b.phone, 40),
     email: text(b.email, 254).toLowerCase(),
     interest: [INTERESTS[b.intent] ?? "Inquiry", text(b.unit, 80)].filter(Boolean).join(": "),
@@ -41,16 +41,29 @@ export async function inquiry(req, env, { url, site }) {
   if (env.INQUIRY_LIMIT && !(await env.INQUIRY_LIMIT.limit({ key: ip })).success)
     return answer({ error: "Too many tries. Wait a minute and send again." }, 429);
 
-  const b = await req.json().catch(() => null);
+  // read as text first: a chunked request has no Content-Length, so the check above isn't enough
+  const raw = await req.text();
+  if (raw.length > 16384) return answer({ error: "That's too long" }, 413);
+  let b = null;
+  try {
+    b = JSON.parse(raw);
+  } catch {}
   const form = new FormData();
   form.append("secret", env.TURNSTILE_SECRET);
   form.append("response", typeof b?.token === "string" ? b.token : "");
   form.append("remoteip", ip);
   const human = await (await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", { method: "POST", body: form })).json();
-  if (!human.success) return answer({ error: "We couldn't confirm you're not a bot. Reload the page and try again." }, 400);
+  // solved on this site, not a token farmed on some other page using the same widget key
+  if (!human.success || (human.hostname && human.hostname !== url.hostname))
+    return answer({ error: "We couldn't confirm you're not a bot. Reload the page and try again." }, 400);
 
   const { lead, listing, error } = validate(b);
   if (error) return answer({ error }, 400);
-  await env.ADMIN.inquiry({ ...lead, source_site: site ?? "main" }, listing);
+  try {
+    await env.ADMIN.inquiry({ ...lead, source_site: site ?? "main" }, listing);
+  } catch (e) {
+    console.error("inquiry", e);
+    return answer({ error: "Your message didn't go through. Please try again in a moment." }, 502);
+  }
   return answer({ ok: true });
 }

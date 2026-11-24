@@ -32,8 +32,9 @@ const STARTERS = ["Brief me on today", "Which hot leads need a follow-up?", "Any
 function Rich({ text }) {
   // the odd heading, divider or "* " bullet she slips in, made plain
   text = text.replace(/^#{1,6}\s+/gm, "").replace(/^\s*(---+|\*\*\*+)\s*$/gm, "").replace(/^(\s*)[*-]\s+/gm, "$1• ").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1$2").replace(/\n{3,}/g, "\n\n");
-  return text.split(/(\[[^\]]+\]\(\/[^)\s]*\)|\*\*[^*]+\*\*)/g).map((s, i) => {
-    const link = s.match(/^\[([^\]]+)\]\((\/[^)\s]*)\)$/);
+  // links only to the admin's own pages: one leading slash, never "//host" or "/\host" (off-site)
+  return text.split(/(\[[^\]]+\]\(\/(?![/\\])[^)\s]*\)|\*\*[^*]+\*\*)/g).map((s, i) => {
+    const link = s.match(/^\[([^\]]+)\]\((\/(?![/\\])[^)\s]*)\)$/);
     if (link)
       return (
         <Link key={i} to={link[2]} className="font-medium underline decoration-gold/60 underline-offset-2 hover:decoration-gold">

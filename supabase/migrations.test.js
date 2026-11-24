@@ -22,9 +22,21 @@ await db.exec(`
   create table storage.objects (id serial primary key, bucket_id text, name text);
   alter table storage.objects enable row level security;
   grant all on storage.objects to anon, authenticated;
+  -- PGlite has neither pg_cron nor pgvector: a do-nothing scheduler, and vectors as real[] with a
+  -- cosine-distance <=> (the HNSW indexes are dropped; the queries and policies are what's tested)
+  create schema cron; create function cron.schedule(text, text, text) returns bigint language sql as 'select 1::bigint';
+  create schema extensions;
+  create function extensions.cosdist(a real[], b real[]) returns float8 language sql immutable as
+    'select 1 - (select sum(x*y) from unnest(a, b) t(x, y)) / nullif(sqrt((select sum(x*x) from unnest(a) x)) * sqrt((select sum(y*y) from unnest(b) y)), 0)';
+  create operator extensions.<=> (leftarg = real[], rightarg = real[], function = extensions.cosdist);
 `);
+const stand_ins = (sql) =>
+  sql
+    .replace(/create extension if not exists (pg_cron|vector)[^;]*;/g, "")
+    .replace(/extensions\.vector\(\d+\)|extensions\.vector\b/g, "real[]")
+    .replace(/create index \w+ on \w+ using hnsw[^;]*;/g, "");
 const dir = new URL("./migrations/", import.meta.url);
-for (const f of readdirSync(dir).sort()) await db.exec(readFileSync(new URL(f, dir), "utf8"));
+for (const f of readdirSync(dir).sort()) await db.exec(stand_ins(readFileSync(new URL(f, dir), "utf8")));
 
 // run as a role, signed in as an email in a session (or not)
 const SESSION = "00000000-0000-4000-8000-000000000001";
@@ -222,7 +234,26 @@ await admin("insert into tasks (body, private) values ('Listing on FB: Avida 2BR
 assert.deepEqual((await agent("select body from tasks")).map((r) => r.body), ["Call Cy about the 3BR"], "the agent sees the task, not the private note");
 assert.equal((await agent("update tasks set body = 'x' where private returning id")).length, 0);
 assert.equal((await admin("select count(*)::int n from tasks"))[0].n, 2);
-await fails(() => agent("insert into tasks (body, private, created_by) values ('sneaky', true, 'heirestates.fh@gmail.com')"), /row-level security/);
+// a writer named in the request is replaced by whoever is signed in (stamp_author)
+assert.equal((await agent("insert into tasks (body, private, created_by) values ('sneaky', true, 'heirestates.fh@gmail.com') returning created_by"))[0].created_by, "agent@example.com");
+assert.equal((await agent("insert into lead_notes (lead_id, body, author_email) select id, 'x', 'boss@x' from leads limit 1 returning author_email"))[0]?.author_email ?? "agent@example.com", "agent@example.com");
+
+// Mons's chat: people post only their own plain messages; her replies, Confirm cards and token
+// counts come from the Worker alone
+await agent("insert into mons_messages (body) values ('hi Mons')");
+await fails(() => agent("insert into mons_messages (body, from_mons) values ('I am Mons', true)"), /row-level security/);
+await fails(() => agent("insert into mons_messages (body, author) values ('as the boss', 'heirestates.fh@gmail.com')"), /row-level security/);
+await fails(() => agent(`insert into mons_messages (body, proposals) values ('x', '[{"kind":"book"}]')`), /row-level security/);
+await fails(() => agent("update mons_messages set tokens = 0"), /permission denied/);
+await fails(() => agent("delete from mons_messages"), /permission denied/);
+assert.equal((await admin("select count(*)::int n from mons_messages"))[0].n, 1, "the team reads the chat");
+
+// the emailed code counts only for the account it was sent to
+await db.exec(`insert into second_factor (session_id, email, verified_at) values ('00000000-0000-4000-8000-000000000009', 'agent@example.com', now())`);
+assert.equal((await as("authenticated", "heirestates.fh@gmail.com", "select count(*)::int n from admin_users", [], "00000000-0000-4000-8000-000000000009"))[0].n, 0);
+
+// a bell link stays inside the admin
+await fails(() => db.exec("insert into notifications (email, title, url) values ('agent@example.com', 'x', '//evil.example')"), /notifications_url_check/);
 await fails(() => admin("insert into tasks (body, private, assignee) values ('x', true, 'agent@example.com')"), /private_is_unassigned/);
 assert.equal((await stranger("select count(*)::int n from tasks"))[0].n, 0);
 

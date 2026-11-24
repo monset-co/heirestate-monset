@@ -36,7 +36,7 @@ async function sendCode(env, me) {
   // codes sent to this email in the last hour, over every session: a stolen password can't buy
   // endless fresh tries, or flood the inbox, by signing in again and again
   const hour = new Date(Date.now() - 36e5).toISOString();
-  const recent = await db(env).get(`second_factor?select=sends&email=eq.${q(me.email)}&sent_at=gt.${q(hour)}`).catch(() => []);
+  const recent = await db(env).get(`second_factor?select=sends&email=eq.${q(me.email)}&sent_at=gt.${q(hour)}`); // fails closed: no count, no code
   if (recent.reduce((n, r) => n + (r.sends ?? 0), 0) >= SENDS_PER_HOUR) return fail("Too many codes this hour. Wait a while, then try again.", 429);
   const code = newCode();
   const fresh = {
@@ -180,8 +180,9 @@ async function remind(env) {
 // A note on the Notes board given to someone else: tell them. Private notes never leave.
 async function pushTask(req, env, me) {
   const { id } = (await req.json().catch(() => ({}))) ?? {};
-  const [t] = Number.isInteger(id) ? await db(env).get(`tasks?select=body,assignee,private,urgent&id=eq.${id}`) : [];
-  if (t && !t.private && t.assignee && t.assignee !== me.email)
+  const [t] = Number.isInteger(id) ? await db(env).get(`tasks?select=body,assignee,private,urgent,created_by&id=eq.${id}`) : [];
+  // only for a task they made themselves, so nobody can re-send someone else's in their own name
+  if (t && !t.private && t.assignee && t.assignee !== me.email && t.created_by === me.email)
     await notify(env, t.assignee, { title: `${t.urgent ? "Urgent: " : ""}${me.admin.name} gave you a task`, body: t.body.slice(0, 200), url: "/notes" });
   return json({ ok: true });
 }

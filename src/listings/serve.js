@@ -68,7 +68,8 @@ export async function serve(req, env, ctx, { url, site, apex, preview }) {
 
   // keyed by address alone, so HEAD (crawlers, link checkers) shares GET's copy
   const cache = caches.default;
-  const key = url.toString();
+  // photos by path alone: "?r=<random>" can't skip the cache and pull from storage every time
+  const key = path.startsWith("/photos/") ? `${url.origin}${url.pathname}` : url.toString();
   const hit = await cache.match(key);
   if (hit) return hit;
 

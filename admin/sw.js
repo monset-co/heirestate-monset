@@ -28,7 +28,8 @@ self.addEventListener("push", (e) => {
 // tapped: bring the app forward on that page, or open it
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const url = new URL(e.notification.data?.url ?? "/", location.origin).href;
+  let url = new URL(e.notification.data?.url ?? "/", location.origin);
+  url = url.origin === location.origin ? url.href : `${location.origin}/`; // only ever into the admin
   e.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
       const win = wins.find((w) => w.url.startsWith(location.origin));
