@@ -1,7 +1,8 @@
 // Mons, the team's assistant (admin/worker/mons.js), as a Messenger-style chat. One chat the whole
-// team shares for now: everyone's messages and Mons's answers arrive live for everyone. She reads the
-// admin's data to answer; she doesn't change anything yet.
-import { Check, Send, Sparkles } from "lucide-react";
+// team shares for now: everyone's messages and Mons's answers arrive live for everyone. Files can be
+// dropped, pasted or attached (screenshots, flyers, PDF price lists): they go to the mons-uploads
+// bucket and the Worker hands them to her with the message.
+import { Check, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { supabase, run } from "../supabase";
@@ -11,6 +12,17 @@ import { SkeletonRows } from "../motion";
 import { ErrorNote, btn, btnGhost, card, input } from "../ui";
 import { when } from "../crm";
 import MonsUsage from "../MonsUsage";
+
+// what she can read, as the mons-uploads bucket and the Worker allow (admin/worker/mons.js FILE_TYPES)
+const FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf", "text/plain", "text/csv"];
+const MAX_FILES = 5;
+const MAX_MB = 10;
+const UPLOADS = "mons-uploads";
+
+async function openFile(f) {
+  const { signedUrl } = await run(supabase.storage.from(UPLOADS).createSignedUrl(f.path, 300));
+  window.open(signedUrl, "_blank", "noopener");
+}
 
 const merge = (list, row) => [...list.filter((x) => x.id !== row.id), row].sort((a, b) => a.created_at.localeCompare(b.created_at));
 const STARTERS = ["Brief me on today", "Which hot leads need a follow-up?", "Any 2BR for rent under ₱30,000?", "What's on the calendar this week?"];
@@ -112,7 +124,18 @@ export default function Mons() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [files, setFiles] = useState([]);
+  const [drag, setDrag] = useState(false);
   const end = useRef(null);
+  const picker = useRef(null);
+
+  // dropped, pasted or picked: the ones she can read, up to five
+  function add(list) {
+    const all = [...list];
+    const ok = all.filter((f) => FILE_TYPES.includes(f.type) && f.size <= MAX_MB * 1048576);
+    setError(ok.length < all.length ? `Mons reads images, PDFs and text files up to ${MAX_MB} MB. For Excel, save it as CSV or send a screenshot.` : "");
+    setFiles((fs) => [...fs, ...ok].slice(0, MAX_FILES));
+  }
 
   useEffect(() => {
     run(supabase.from("mons_messages").select("*").order("created_at", { ascending: false }).limit(200)).then((l) => setMsgs(l.reverse()), (e) => setError(e.message));
@@ -133,16 +156,26 @@ export default function Mons() {
   async function send(e, said = text) {
     e?.preventDefault();
     const body = said.trim();
-    if (!body || busy) return;
+    const sending = said === text ? files : []; // a starter button sends just its words
+    if ((!body && !sending.length) || busy) return;
     setBusy(true);
     setError("");
     setText("");
+    setFiles([]);
     try {
-      const { messages } = await api("mons", { text: body });
+      const attachments = await Promise.all(
+        sending.map(async (f) => {
+          const path = `${crypto.randomUUID()}/${f.name.replace(/[^\w.\- ]+/g, "_").slice(-120) || "file"}`;
+          await run(supabase.storage.from(UPLOADS).upload(path, f, { contentType: f.type }));
+          return { path, name: f.name, type: f.type, size: f.size };
+        })
+      );
+      const { messages } = await api("mons", { text: body, attachments });
       setMsgs((l) => messages.reduce(merge, l ?? []));
     } catch (err) {
       setError(err.message);
       setText(body);
+      setFiles(sending);
     }
     setBusy(false);
   }
@@ -162,8 +195,27 @@ export default function Mons() {
   return (
     <section
       aria-label="Mons"
-      className={`${card} flex h-[calc(100dvh-var(--tabbar-h)-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem)] min-h-[26rem] flex-col overflow-hidden md:h-[calc(100dvh-5rem)]`}
+      onDragOver={(e) => {
+        if (![...e.dataTransfer.types].includes("Files")) return;
+        e.preventDefault();
+        setDrag(true);
+      }}
+      onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget) && setDrag(false)}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        setDrag(false);
+        add(e.dataTransfer.files);
+      }}
+      className={`${card} relative flex h-[calc(100dvh-var(--tabbar-h)-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem)] min-h-[26rem] flex-col overflow-hidden md:h-[calc(100dvh-5rem)]`}
     >
+      {drag && (
+        <div className="pointer-events-none absolute inset-2 z-10 grid place-items-center rounded-xl border-2 border-dashed border-gold bg-surface/90 text-sm text-fg" aria-hidden>
+          <span className="flex items-center gap-2">
+            <Paperclip className="size-4 text-gold-ink" /> Drop to send to Mons: screenshots, flyers, PDFs
+          </span>
+        </div>
+      )}
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-3">
         <span className="grid size-10 place-items-center rounded-full bg-navy text-gold" aria-hidden>
           <Sparkles className="size-5" />
@@ -189,6 +241,18 @@ export default function Mons() {
                   }`}
                 >
                   <p className="break-words whitespace-pre-wrap">{m.from_mons ? <Rich text={m.body} /> : m.body}</p>
+                  {m.attachments?.length > 0 && (
+                    <ul className="mt-1.5 space-y-1 text-xs" aria-label="Files">
+                      {m.attachments.map((f) => (
+                        <li key={f.path}>
+                          <button type="button" onClick={() => openFile(f).catch((e) => setError(e.message))} className="flex max-w-full items-center gap-1.5 text-left underline-offset-2 hover:underline">
+                            <Paperclip className="size-3 shrink-0" aria-hidden />
+                            <span className="truncate">{f.name}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   {m.changes?.length > 0 && (
                     <ul className="mt-2 space-y-1 border-t border-line pt-2 text-xs" aria-label="What Mons changed">
                       {m.changes.map((c, i) => (
@@ -238,7 +302,24 @@ export default function Mons() {
 
       <div className="border-t border-line p-3">
         <ErrorNote error={error} />
+        {files.length > 0 && (
+          <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="Files to send">
+            {files.map((f, i) => (
+              <li key={i} className="flex max-w-[16rem] items-center gap-1 rounded-full border border-line bg-surface py-1 pr-1 pl-2.5 text-xs">
+                <Paperclip className="size-3 shrink-0 text-muted" aria-hidden />
+                <span className="truncate">{f.name}</span>
+                <button type="button" onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))} className="rounded-full p-0.5 text-muted hover:text-fg" aria-label={`Remove ${f.name}`}>
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <form onSubmit={send} className="flex items-end gap-2">
+          <input ref={picker} type="file" multiple hidden accept={FILE_TYPES.join(",")} onChange={(e) => (add(e.target.files), (e.target.value = ""))} />
+          <button type="button" className={btnGhost} onClick={() => picker.current.click()} disabled={busy || files.length >= MAX_FILES} aria-label="Attach files">
+            <Paperclip className="size-4" aria-hidden />
+          </button>
           <label className="flex-1">
             <span className="sr-only">Message Mons</span>
             <textarea
@@ -246,13 +327,19 @@ export default function Mons() {
               maxLength={4000}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              // a pasted screenshot becomes an attachment; pasted text stays text
+              onPaste={(e) => {
+                if (!e.clipboardData.files.length) return;
+                e.preventDefault();
+                add(e.clipboardData.files);
+              }}
               // Enter sends only with a real keyboard: a phone's Enter is the new line
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && matchMedia("(pointer: fine)").matches && send(e)}
               placeholder="Ask Mons… (Shift+Enter for a new line)"
               className={`${input} resize-none`}
             />
           </label>
-          <button className={btn} disabled={busy || !text.trim()} aria-label="Send">
+          <button className={btn} disabled={busy || (!text.trim() && !files.length)} aria-label="Send">
             <Send className="size-4" aria-hidden />
           </button>
         </form>

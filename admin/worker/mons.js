@@ -47,7 +47,8 @@ How you work:
 - Peso amounts as ₱1,234,567. Dates in plain words ("Fri 28 Nov, 3pm").
 - For a debriefing, cover: reminders due or overdue, today's and tomorrow's bookings, hot and reserved leads, and tasks that are urgent or due.
 - You can act. Small things you do straight away when asked: add a note, a reminder or a task, tick a reminder or task off, set hot/warm/cold, add properties to the inventory, add a new lead. Bigger things you propose and a person confirms with a button under your message: changing a stage, reassigning the agent, booking on the calendar, changing a property's details, changing a lead's details. Say plainly what you did, and what is waiting for their Confirm.
-- Listings pasted in to add: one inventory item per property. Copy what's written, never fill gaps with guesses; prices as whole pesos (₱35k = 35000). Before adding, search the inventory for each building and unit: if one looks already there, ask instead of adding a second. After adding, say which details were missing.
+- Listings come as pasted text, files (screenshots, flyers, PDF price lists, which you can see) or links. A rent.ph or filipinohomes.com link: open it with read_listing, and save the link and listing code in rph_url/rph_code or fh_url/fh_code. A Facebook link you can't open: ask for a screenshot of the post or its text. A file that isn't a listing: just say what it is and ask what to do.
+- Listings to add: one inventory item per property. Copy what's written, never fill gaps with guesses; prices as whole pesos (₱35k = 35000). Before adding, search the inventory for each building and unit: if one looks already there, ask instead of adding a second. After adding, say which details were missing.
 - To change a property or a lead, find its id first (search_inventory, search_leads), then send only the fields that change. Deleting isn't something you do: point them to the Inventory or lead page.
 - Only act on what you were asked. If something you need is unclear (which lead, what time), ask first instead of guessing. Never say something is done unless the tool said so.
 - Times you pass to tools are Manila time, written YYYY-MM-DDTHH:MM. "Tomorrow morning" with no time given: 9:00. A viewing with no length given: one hour.
@@ -84,6 +85,10 @@ const INV_PROPS = {
   summary: s("A ready-to-post description"),
   source: s("The owner or broker it came from"),
   source_url: s(),
+  rph_code: s("Its Rent.ph listing code"),
+  rph_url: s("Its Rent.ph link"),
+  fh_code: s("Its Filipino Homes listing code"),
+  fh_url: s("Its Filipino Homes link"),
 };
 // a lead's details (stage, agent and hot/warm/cold have their own tools)
 const LEAD_PROPS = {
@@ -440,6 +445,11 @@ const TOOLS = [
     },
   },
   {
+    name: "read_listing",
+    description: "Open a listing link on rent.ph or filipinohomes.com and read it (its details, price, description). Use it before adding a linked listing to the inventory. Facebook links can't be opened.",
+    parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+  },
+  {
     name: "search_knowledge",
     description:
       "The real estate knowledge base: how things are done and what the rules are (reservation, Contract to Sell, buyer's papers, financing, Maceda Law refunds, License to Sell, broker licensing…). Use it for any how-to, process, legal or requirements question before answering from memory.",
@@ -531,6 +541,7 @@ function tools(env, token, team) {
       return { ...lead, agent: agentName(lead.agent_id), notes, reminders, papers: checklist, files, whatsapp: wa };
     },
     search_knowledge: ({ question }) => knowledge.search(env, u, question),
+    read_listing: ({ url }) => readListing(url),
     search_memory: ({ question, limit }) => recall(env, u, String(question ?? "").slice(0, 500), limit),
     // the Matches tab's own scoring (admin/src/match.js), so she and the page agree
     async match_listings({ lead_id, limit }) {
@@ -590,6 +601,87 @@ function tools(env, token, team) {
     async list_documents({ shelf }) {
       return u.get(`library_files?select=shelf,file_name,created_at&order=created_at.desc&limit=100${shelf ? `&shelf=eq.${q(shelf)}` : ""}`);
     },
+  };
+}
+
+// ── files and links ────────────────────────────────────────────────────────────────────────────
+// what can be dropped into the chat (the mons-uploads bucket allows the same)
+export const FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf", "text/plain", "text/csv"];
+const MAX_FILES = 5;
+
+// a dropped file as Gemini takes it: images and PDFs as they are, text as text. Read as the person
+// who sent it, so the bucket's own rules apply.
+async function filePart(env, token, f) {
+  const r = await fetch(`${env.SUPABASE_URL}/storage/v1/object/mons-uploads/${f.path.split("/").map(encodeURIComponent).join("/")}`, {
+    headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) throw new Error(`storage ${r.status} ${f.path}`);
+  if (f.type.startsWith("text/")) return { text: `[file ${f.name}]\n${(await r.text()).slice(0, 60000)}` };
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { inline_data: { mime_type: f.type, data: btoa(bin) } };
+}
+
+// listing sites she may open. Only these: a link in a message can't send her anywhere else.
+const LISTING_SITES = ["rent.ph", "filipinohomes.com"];
+const site = (host) => LISTING_SITES.find((s) => host === s || host.endsWith(`.${s}`));
+const decode = (s) =>
+  s
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCharCode(parseInt(n, 16)));
+
+// A listing page, boiled down: its structured data (JSON-LD), its title and description, and the
+// words on it, without the menus and scripts.
+// ponytail: regex, not a parser; enough for the two sites' listing pages, revisit if they change.
+export async function readListing(url) {
+  let u;
+  try {
+    u = new URL(String(url ?? "").trim());
+  } catch {
+    return { error: "That isn't a link" };
+  }
+  if (/(^|\.)(facebook|fb|instagram)\.com$|(^|\.)fb\.me$/.test(u.hostname))
+    return { error: "Facebook doesn't let me open its posts. Ask for a screenshot of the post (dropped into the chat) or the post's text pasted in." };
+  if (u.protocol !== "https:" || !site(u.hostname)) return { error: `I can only open listings on ${LISTING_SITES.join(" and ")}` };
+  const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; HeirEstatesAdmin/1.0)", Accept: "text/html" }, redirect: "follow" });
+  if (!site(new URL(r.url).hostname)) return { error: "That link went somewhere else" };
+  if (!r.ok) return { error: `The page didn't open (${r.status})` };
+  const html = (await r.text()).slice(0, 2_000_000);
+  const data = [...html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)]
+    .map((m) => {
+      try {
+        return JSON.parse(m[1]);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    // the site-wide blocks (who runs the site, the search box) aren't the listing
+    .filter((d) => !["Organization", "WebSite", "BreadcrumbList", "SiteNavigationElement"].includes(d["@type"]));
+  if (data.some((d) => ["CollectionPage", "SearchResultsPage", "ItemList"].includes(d["@type"])) && !data.some((d) => d["@type"] === "RealEstateListing"))
+    return { error: "That link is a search or list page, not one listing. Ask for the link to the listing itself." };
+  const meta = (p) => decode(html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${p}["'][^>]+content=["']([^"']*)`, "i"))?.[1] ?? "");
+  const text = decode(
+    html
+      .replace(/<(script|style|noscript|svg|nav|header|footer)[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  return {
+    url: r.url,
+    site: site(new URL(r.url).hostname),
+    title: decode(html.match(/<title[^>]*>([^<]*)/i)?.[1] ?? "").trim(),
+    description: meta("og:description") || meta("description"),
+    ...(data.length && { data: JSON.stringify(data).slice(0, 5000) }),
+    text: text.slice(0, 5000),
   };
 }
 
@@ -663,17 +755,22 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
 // through realtime, so other people in the chat see them too.
 export async function chat(req, env, me, token) {
   if (!env.GEMINI_API_KEY) return json({ error: "Mons isn't set up yet (GEMINI_API_KEY)" }, 501);
-  const { text } = await req.json().catch(() => ({}));
+  const { text, attachments: sent } = await req.json().catch(() => ({}));
+  // files they dropped in, already in the mons-uploads bucket: only paths the page makes, only types she reads
+  const files = (Array.isArray(sent) ? sent : [])
+    .filter((f) => /^[0-9a-f-]{36}\/[^/]{1,200}$/.test(f?.path ?? "") && FILE_TYPES.includes(f.type))
+    .slice(0, MAX_FILES)
+    .map(({ path, name, type, size }) => ({ path, name: String(name ?? path).slice(0, 200), type, size: Number(size) || 0 }));
   const said = String(text ?? "").trim();
-  if (!said || said.length > 4000) return json({ error: "Write a message (up to 4,000 characters)" }, 400);
+  if ((!said && !files.length) || said.length > 4000) return json({ error: "Write a message (up to 4,000 characters)" }, 400);
   const u = db(env, token);
   const [team, earlier, used, [cap]] = await Promise.all([
     u.get("admin_users?select=id,name,email&active=eq.true&order=name"),
-    u.get(`mons_messages?select=from_mons,author,body,changes,proposals&order=created_at.desc&limit=${HISTORY}`),
+    u.get(`mons_messages?select=from_mons,author,body,changes,proposals,attachments&order=created_at.desc&limit=${HISTORY}`),
     u.call("rpc/mons_tokens_this_month", { method: "POST", body: "{}" }),
     u.get("settings?select=value&key=eq.mons_monthly_tokens"),
   ]);
-  const [mine] = await u.insert("mons_messages", { body: said });
+  const [mine] = await u.insert("mons_messages", { body: said || `Sent ${files.map((f) => f.name).join(", ")}`, attachments: files });
   // the month's cap: past it she says so instead of answering, until the 1st or a higher cap
   if (Number(used) >= monthlyCap(cap?.value)) {
     const [hers] = await u.insert("mons_messages", {
@@ -688,9 +785,25 @@ export async function chat(req, env, me, token) {
     [m.body, ...m.changes.map((c) => `[done: ${c.text}]`), ...m.proposals.map((p) => `[proposed: ${p.summary} (${p.state}${p.by ? ` by ${p.by}` : ""})]`)].join("\n");
   const contents = earlier
     .reverse()
-    .map((m) => (m.from_mons ? { role: "model", parts: [{ text: recall(m) }] } : { role: "user", parts: [{ text: `${nameOf(m.author)}: ${m.body}` }] }));
+    // earlier files only by name: she read them when they came, and what she did with them is in her reply
+    .map((m) =>
+      m.from_mons
+        ? { role: "model", parts: [{ text: recall(m) }] }
+        : { role: "user", parts: [{ text: `${nameOf(m.author)}: ${m.body}${m.attachments?.length ? `\n[attached then: ${m.attachments.map((f) => f.name).join(", ")}]` : ""}` }] }
+    );
   const now = new Date().toLocaleString("en-PH", { timeZone: TZ, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
-  contents.push({ role: "user", parts: [{ text: `[${now} · asking: ${me.admin.name} <${me.email}>]\n${me.admin.name}: ${said}` }] });
+  let parts;
+  try {
+    parts = await Promise.all(files.map((f) => filePart(env, token, f)));
+  } catch (e) {
+    console.error("mons files", e);
+    const [hers] = await u.insert("mons_messages", { from_mons: true, body: "I'm sorry, I couldn't open the file you sent. Could you try attaching it again?" });
+    return json({ messages: [mine, hers] });
+  }
+  contents.push({
+    role: "user",
+    parts: [{ text: `[${now} · asking: ${me.admin.name} <${me.email}>]\n${me.admin.name}: ${said || "(no message, just the files below)"}` }, ...parts],
+  });
 
   // her tools: the lookups, then the changes, which are written down as they happen
   const changes = [];
