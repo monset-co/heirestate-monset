@@ -15,7 +15,12 @@ import { TEMPLATES, ago, when } from "../crm";
 export const THREAD = "id, wa_id, name, lead_id, unread, last_message_at, last_inbound_at, lead:leads(id, name)";
 const MSG = "id, thread_id, direction, type, body, media_id, media_name, status, error, sent_by, created_at";
 const byRecent = (a, b) => (b.last_message_at ?? "").localeCompare(a.last_message_at ?? "");
-const merge = (list, row) => [...list.filter((x) => x.id !== row.id), row];
+// laid over the copy already here: a change from realtime (a message's status) can leave out long
+// columns it didn't change, which Postgres sends as missing
+const merge = (list, row) => {
+  const had = list.find((x) => x.id === row.id);
+  return [...list.filter((x) => x.id !== row.id), had ? { ...had, ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined)) } : row];
+};
 const phone = (wa) => `+${wa}`;
 const canReply = (t) => t?.last_inbound_at && Date.now() - new Date(t.last_inbound_at) < 864e5;
 // hours left to reply freely: WhatsApp's 24-hour customer service window

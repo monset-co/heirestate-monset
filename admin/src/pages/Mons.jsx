@@ -86,14 +86,21 @@ function DocPreview({ file, onClose }) {
   );
 }
 
-const merge = (list, row) => [...list.filter((x) => x.id !== row.id), row].sort((a, b) => a.created_at.localeCompare(b.created_at));
+// a message, new or changed, into the list. A change from realtime (a Confirm pressed) can leave out
+// long columns it didn't change (Postgres sends unchanged large values as missing), so it's laid
+// over the copy already here, never in place of it.
+const merge = (list, row) => {
+  const had = list.find((x) => x.id === row.id);
+  const next = had ? { ...had, ...Object.fromEntries(Object.entries(row).filter(([, v]) => v !== undefined)) } : row;
+  return [...list.filter((x) => x.id !== row.id), next].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+};
 const STARTERS = ["Brief me on today", "Which hot leads need a follow-up?", "Any 2BR for rent under ₱30,000?", "What's on the calendar this week?"];
 
 // Mons writes a little Markdown: [links](/leads/12) to the admin's own pages, **bold** and lists.
 // Only links inside the admin become links; anything else stays text.
-function Rich({ text }) {
+function Rich({ text = "" }) {
   // the odd heading, divider or "* " bullet she slips in, made plain
-  text = text.replace(/^#{1,6}\s+/gm, "").replace(/^\s*(---+|\*\*\*+)\s*$/gm, "").replace(/^(\s*)[*-]\s+/gm, "$1• ").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1$2").replace(/\n{3,}/g, "\n\n");
+  text = String(text ?? "").replace(/^#{1,6}\s+/gm, "").replace(/^\s*(---+|\*\*\*+)\s*$/gm, "").replace(/^(\s*)[*-]\s+/gm, "$1• ").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1$2").replace(/\n{3,}/g, "\n\n");
   // links only to the admin's own pages: one leading slash, never "//host" or "/\host" (off-site)
   return text.split(/(\[[^\]]+\]\(\/(?![/\\])[^)\s]*\)|\*\*[^*]+\*\*)/g).map((s, i) => {
     const link = s.match(/^\[([^\]]+)\]\((\/(?![/\\])[^)\s]*)\)$/);
@@ -345,7 +352,7 @@ export default function Mons() {
                     <Proposal key={i} p={p} onAnswer={(ok) => decide(m.id, i, ok)} />
                   ))}
                   <p className={`mt-1 text-right text-[0.7rem] ${mine ? "text-cream/60" : "text-muted"}`}>
-                    {m.from_mons ? "Mons" : mine ? "You" : (people[m.author] ?? m.author.split("@")[0])} ·{" "}
+                    {m.from_mons ? "Mons" : mine ? "You" : (people[m.author] ?? String(m.author ?? "").split("@")[0])} ·{" "}
                     <time dateTime={m.created_at} title={when(m.created_at)}>
                       {new Date(m.created_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}
                     </time>
