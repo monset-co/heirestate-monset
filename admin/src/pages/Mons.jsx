@@ -14,7 +14,12 @@ import { when } from "../crm";
 import MonsUsage from "../MonsUsage";
 
 // what she can read, as the mons-uploads bucket and the Worker allow (admin/worker/mons.js FILE_TYPES)
-const FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf", "text/plain", "text/csv"];
+const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf", "text/plain", "text/csv", DOCX, XLSX];
+// a file's type by its ending first: Windows calls a .csv an Excel file, and some phones send none
+const BY_END = { csv: "text/csv", txt: "text/plain", pdf: "application/pdf", docx: DOCX, xlsx: XLSX, jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", heic: "image/heic" };
+const typeOf = (f) => BY_END[f.name.split(".").pop().toLowerCase()] ?? f.type;
 const MAX_FILES = 5;
 const MAX_MB = 10;
 const UPLOADS = "mons-uploads";
@@ -191,8 +196,8 @@ export default function Mons() {
   // dropped, pasted or picked: the ones she can read, up to five
   function add(list) {
     const all = [...list];
-    const ok = all.filter((f) => FILE_TYPES.includes(f.type) && f.size <= MAX_MB * 1048576);
-    setError(ok.length < all.length ? `Mons reads images, PDFs and text files up to ${MAX_MB} MB. For Excel, save it as CSV or send a screenshot.` : "");
+    const ok = all.filter((f) => FILE_TYPES.includes(typeOf(f)) && f.size <= MAX_MB * 1048576);
+    setError(ok.length < all.length ? `Mons reads images, PDFs, Word, Excel (.xlsx), CSV and text files, up to ${MAX_MB} MB each. For an old .xls or .doc, save it in the newer format first.` : "");
     setFiles((fs) => [...fs, ...ok].slice(0, MAX_FILES));
   }
 
@@ -226,9 +231,9 @@ export default function Mons() {
         sending.map(async (f) => {
           const path = `${crypto.randomUUID()}/${f.name.replace(/[^\w.\- ]+/g, "_").slice(-120) || "file"}`;
           // the storage's own words, not run()'s "sign in again": a refused upload says which file and why
-          const { error } = await supabase.storage.from(UPLOADS).upload(path, f, { contentType: f.type });
+          const { error } = await supabase.storage.from(UPLOADS).upload(path, f, { contentType: typeOf(f) });
           if (error) throw new Error(`${f.name} couldn't be uploaded: ${error.message}${error.statusCode ? ` (${error.statusCode})` : ""}`);
-          return { path, name: f.name, type: f.type, size: f.size };
+          return { path, name: f.name, type: typeOf(f), size: f.size };
         })
       );
       const { messages } = await api("mons", { text: body, attachments });
@@ -387,7 +392,7 @@ export default function Mons() {
           </ul>
         )}
         <form onSubmit={send} className="flex items-end gap-2">
-          <input ref={picker} type="file" multiple hidden accept={FILE_TYPES.join(",")} onChange={(e) => (add(e.target.files), (e.target.value = ""))} />
+          <input ref={picker} type="file" multiple hidden accept={[...FILE_TYPES, ".csv", ".xlsx", ".docx"].join(",")} onChange={(e) => (add(e.target.files), (e.target.value = ""))} />
           <button type="button" className={btnGhost} onClick={() => picker.current.click()} disabled={busy || files.length >= MAX_FILES} aria-label="Attach files">
             <Paperclip className="size-4" aria-hidden />
           </button>

@@ -73,6 +73,37 @@ export function wordsOf(files) {
     .filter((t) => t.trim());
 }
 
+// ── Word and Excel files dropped into the chat, as text Gemini can read (it can't read them as they are)
+export const docxText = (bytes) => wordsOf(unzipSync(bytes)).join("\n");
+
+// every sheet of a workbook as tab-separated rows, under its name. Cells that are text point into
+// sharedStrings; dates come as Excel's day numbers, which she's told about.
+export function xlsxText(bytes) {
+  const z = unzipSync(bytes);
+  const read = (n) => (z[n] ? strFromU8(z[n]) : "");
+  const shared = [...read("xl/sharedStrings.xml").matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => [...m[1].matchAll(/<t(?:\s[^>]*)?>([^<]*)<\/t>/g)].map((t) => unxml(t[1])).join(""));
+  const rels = Object.fromEntries([...read("xl/_rels/workbook.xml.rels").matchAll(/<Relationship\b[^>]*>/g)].map((m) => [m[0].match(/Id="([^"]+)"/)?.[1], m[0].match(/Target="([^"]+)"/)?.[1]]));
+  const sheets = [...read("xl/workbook.xml").matchAll(/<sheet\b[^>]*>/g)].map((m) => ({ name: unxml(m[0].match(/name="([^"]*)"/)?.[1] ?? "Sheet"), target: rels[m[0].match(/r:id="([^"]+)"/)?.[1]] }));
+  const col = (ref) => [...ref.replace(/\d+/g, "")].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
+  return sheets
+    .map(({ name, target }) => {
+      const xml = read(`xl/${String(target ?? "").replace(/^\/?xl\//, "")}`);
+      const rows = [...xml.matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/g)].map((row) => {
+        const cells = [];
+        for (const c of row[1].matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+          const ref = c[1].match(/r="([A-Z]+)\d+"/)?.[1];
+          const type = c[1].match(/t="([^"]+)"/)?.[1];
+          const v = c[2]?.match(/<v>([^<]*)<\/v>/)?.[1];
+          const value = type === "s" ? shared[Number(v)] : type === "inlineStr" ? [...(c[2] ?? "").matchAll(/<t(?:\s[^>]*)?>([^<]*)<\/t>/g)].map((t) => unxml(t[1])).join("") : type === "b" ? (v === "1" ? "TRUE" : "FALSE") : v != null ? unxml(v) : "";
+          cells[ref ? col(ref) : cells.length] = String(value ?? "").replace(/\s+/g, " ").trim();
+        }
+        return Array.from(cells, (x) => x ?? "").join("\t").replace(/\t+$/, "");
+      });
+      return `[sheet ${name}]\n${rows.filter((r) => r.trim()).join("\n")}`;
+    })
+    .join("\n\n");
+}
+
 const blanksIn = (words) => [...new Set([...words.join("\n").matchAll(BLANK)].map((m) => m[1].trim()))];
 
 async function template(env, token, u, id) {
