@@ -2,14 +2,14 @@
 // team shares for now: everyone's messages and Mons's answers arrive live for everyone. Files can be
 // dropped, pasted or attached (screenshots, flyers, PDF price lists): they go to the mons-uploads
 // bucket and the Worker hands them to her with the message.
-import { Check, Paperclip, Send, Sparkles, X } from "lucide-react";
+import { Check, Download, FileText, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { useMe } from "../me";
 import { SkeletonRows } from "../motion";
-import { ErrorNote, btn, btnGhost, card, input } from "../ui";
+import { ErrorNote, Modal, btn, btnGhost, card, input } from "../ui";
 import { when } from "../crm";
 import MonsUsage from "../MonsUsage";
 
@@ -22,6 +22,63 @@ const UPLOADS = "mons-uploads";
 async function openFile(f) {
   const { signedUrl } = await run(supabase.storage.from(UPLOADS).createSignedUrl(f.path, 300));
   window.open(signedUrl, "_blank", "noopener");
+}
+const isWord = (f) => /\.docx$/i.test(f.name);
+
+// A Word draft Mons made, laid out like Word, inside the admin (the file never leaves for an
+// outside viewer). docx-preview draws it into a shadow root; its stylesheet is handed over as a
+// constructed sheet, because the admin's CSP refuses <style> elements (style-src 'self').
+function DocPreview({ file, onClose }) {
+  const host = useRef(null);
+  const [state, setState] = useState({ loading: true });
+  useEffect(() => {
+    let alive = true;
+    let href;
+    (async () => {
+      try {
+        const { signedUrl } = await run(supabase.storage.from(UPLOADS).createSignedUrl(file.path, 300));
+        const blob = await (await fetch(signedUrl)).blob();
+        const { renderAsync } = await import("docx-preview");
+        if (!alive || !host.current) return;
+        const root = host.current.shadowRoot ?? host.current.attachShadow({ mode: "open" });
+        const body = document.createElement("div");
+        const styles = document.createElement("div"); // never in the page: only read from
+        root.replaceChildren(body);
+        await renderAsync(blob, body, styles, { inWrapper: true, ignoreFonts: true, breakPages: true });
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync([...styles.querySelectorAll("style")].map((s) => s.textContent).join("\n"));
+        root.adoptedStyleSheets = [sheet];
+        href = URL.createObjectURL(blob);
+        if (alive) setState({ href });
+      } catch (e) {
+        if (alive) setState({ error: e.message || "The draft couldn't be shown" });
+      }
+    })();
+    return () => {
+      alive = false;
+      if (href) URL.revokeObjectURL(href);
+    };
+  }, [file.path]);
+  return (
+    <Modal open onClose={onClose} title={file.name} guard={false}>
+      <div className="grid gap-3">
+        <ErrorNote error={state.error} />
+        {state.loading && <SkeletonRows n={4} />}
+        <div ref={host} className="max-h-[65dvh] overflow-auto rounded-lg border border-line bg-sunken" aria-label={`Preview of ${file.name}`} />
+        <div className="flex flex-wrap gap-2">
+          {state.href && (
+            <a href={state.href} download={file.name} className={btn}>
+              <Download className="size-4" aria-hidden /> Download Word file
+            </a>
+          )}
+          <button type="button" className={btnGhost} onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <p className="text-xs text-muted">A preview: Word shows the exact layout. Check every detail before it goes to a client.</p>
+      </div>
+    </Modal>
+  );
 }
 
 const merge = (list, row) => [...list.filter((x) => x.id !== row.id), row].sort((a, b) => a.created_at.localeCompare(b.created_at));
@@ -127,6 +184,7 @@ export default function Mons() {
   const [error, setError] = useState("");
   const [files, setFiles] = useState([]);
   const [drag, setDrag] = useState(false);
+  const [preview, setPreview] = useState(null); // a Word draft being looked at
   const end = useRef(null);
   const picker = useRef(null);
 
@@ -210,6 +268,7 @@ export default function Mons() {
       }}
       className={`${card} relative flex h-[calc(100dvh-var(--tabbar-h)-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem)] min-h-[26rem] flex-col overflow-hidden md:h-[calc(100dvh-5rem)]`}
     >
+      {preview && <DocPreview file={preview} onClose={() => setPreview(null)} />}
       {drag && (
         <div className="pointer-events-none absolute inset-2 z-10 grid place-items-center rounded-xl border-2 border-dashed border-gold bg-surface/90 text-sm text-fg" aria-hidden>
           <span className="flex items-center gap-2">
@@ -246,9 +305,18 @@ export default function Mons() {
                     <ul className="mt-1.5 space-y-1 text-xs" aria-label="Files">
                       {m.attachments.map((f) => (
                         <li key={f.path}>
-                          <button type="button" onClick={() => openFile(f).catch((e) => setError(e.message))} className="flex max-w-full items-center gap-1.5 text-left underline-offset-2 hover:underline">
-                            <Paperclip className="size-3 shrink-0" aria-hidden />
+                          <button
+                            type="button"
+                            onClick={() => (isWord(f) ? setPreview(f) : openFile(f).catch((e) => setError(e.message)))}
+                            className={
+                              isWord(f)
+                                ? "press flex max-w-full items-center gap-2 rounded-lg border border-line bg-bg px-2.5 py-2 text-left text-sm font-medium text-fg hover:border-muted/50"
+                                : "flex max-w-full items-center gap-1.5 text-left underline-offset-2 hover:underline"
+                            }
+                          >
+                            {isWord(f) ? <FileText className="size-4 shrink-0 text-gold-ink" aria-hidden /> : <Paperclip className="size-3 shrink-0" aria-hidden />}
                             <span className="truncate">{f.name}</span>
+                            {isWord(f) && <span className="ml-auto shrink-0 text-xs font-normal text-muted">Preview</span>}
                           </button>
                         </li>
                       ))}

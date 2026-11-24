@@ -1,7 +1,7 @@
 // Inventory: every property the team can offer, from owners and other brokers (supabase/migrations
 // …_inventory.sql), in tabs for pre-selling, rentals and sales. Not the public listings: nothing here
 // shows on a site. A row opens its full record to read, copy the post summary from, or edit.
-import { Copy, ExternalLink, Globe, MapPin, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Copy, ExternalLink, Globe, MapPin, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Chip } from "./Matches";
 import { AREAS, inArea, LANDMARK, LANDMARKS, RADII, distance } from "../match";
 // the map (Leaflet, ~45 KB) loads when one is first shown, not with the table
@@ -12,12 +12,12 @@ const LazyMap = (p) => (
   </Suspense>
 );
 import { m as motion } from "motion/react";
-import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { supabase, run, every } from "../supabase";
 import { api } from "../api";
 import { SkeletonRows, spring, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask, ShareButton } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask, ShareButton, useDismiss } from "../ui";
 import { peso } from "../crm";
 import { slugify } from "../../../src/listings/rules.js";
 
@@ -30,6 +30,9 @@ const TABS = [
 ];
 const TONE = { "Pre-selling": "inv-pre", "For Rent": "inv-for-rent", "For Sale": "inv-for-sale", "For Assume": "inv-assume", Reserved: "inv-reserved", Rented: "inv-rented", Sold: "inv-sold", Unavailable: "inv-unavailable" };
 const OPEN = ["Pre-selling", "For Rent", "For Sale", "For Assume"]; // still on offer
+// a quick status change also clears what it replaces: Rented ends For Rent, Sold ends the sale
+const REPLACES = { Rented: ["For Rent"], "For Rent": ["Rented"], Sold: ["For Sale", "For Assume", "Pre-selling", "Reserved"], "For Sale": ["Sold"], Reserved: ["Pre-selling"] };
+const DOMAIN = "heirestates.com"; // the public sites (as ListingDetail.jsx)
 // a pin's colour on the map: the same colour as its status badge (ui.jsx "inv-*"). A property with
 // several statuses takes the first of these, in order: what's on offer before what's gone.
 const PIN_OF = { "Pre-selling": "#16a34a", "For Rent": "#f97316", "For Sale": "#38bdf8", "For Assume": "#facc15", Reserved: "#a1a1aa", Rented: "#dc2626", Sold: "#14213a", Unavailable: "#171717" };
@@ -272,7 +275,7 @@ export default function Inventory() {
                   <td className="hidden px-4 py-3 whitespace-nowrap md:table-cell">{r.furnishing ? <Chip tone="emerald">{r.furnishing}</Chip> : <span className="text-muted">—</span>}</td>
                   <td className="py-3 pr-4 align-top sm:px-4 sm:align-middle">
                     <span className="flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:items-center">
-                      {r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>)}
+                      <QuickStatus row={r} onChange={(row) => setList((all) => all.map((x) => (x.id === row.id ? row : x)))} />
                       {r.available_from && <Badge value="draft">From {date(r.available_from)}</Badge>}
                       {r.pet_friendly === "yes" && <Badge value="draft">Pets OK</Badge>}
                     </span>
@@ -293,7 +296,19 @@ export default function Inventory() {
       )}
 
       <Modal open={!!open} onClose={() => setOpen(null)} title={open?.id ? open.type || "Property" : "Add property"}>
-        {open && (editing ? <PropertyForm row={open} onSaved={saved} buildings={buildings} owners={[...new Set((list ?? []).map((r) => r.source).filter(Boolean))].sort((a, b) => a.localeCompare(b))} /> : <PropertyView row={open} onEdit={() => setEditing(true)} />)}
+        {open &&
+          (editing ? (
+            <PropertyForm row={open} onSaved={saved} buildings={buildings} owners={[...new Set((list ?? []).map((r) => r.source).filter(Boolean))].sort((a, b) => a.localeCompare(b))} />
+          ) : (
+            <PropertyView
+              row={open}
+              onEdit={() => setEditing(true)}
+              onStatus={(row) => {
+                setOpen(row);
+                setList((all) => all.map((x) => (x.id === row.id ? row : x)));
+              }}
+            />
+          ))}
       </Modal>
     </>
   );
@@ -301,8 +316,17 @@ export default function Inventory() {
 
 // A property at a glance: price and status up top, the facts as chips, the long text in labelled
 // blocks, links as buttons. Edit opens the full form.
-export function PropertyView({ row: r, onEdit }) {
+export function PropertyView({ row: r, onEdit, onStatus }) {
   const today = new Date().toISOString().slice(0, 10);
+  // its page on the websites, once it's been put there and published: the link a client can open
+  const [web, setWeb] = useState(null);
+  useEffect(() => {
+    if (!r.id) return;
+    run(supabase.from("listings").select("slug, project").like("slug", `%-${r.id}`).eq("published", true).neq("status", "hidden").limit(1)).then(
+      ([l]) => setWeb(l ? `https://${l.project ? `${l.project}.` : ""}${DOMAIN}/listings/${l.slug}` : null),
+      () => setWeb(null)
+    );
+  }, [r.id]);
   const blocks = [
     ["Specs", r.specs],
     ["Inclusions", r.inclusions],
@@ -322,7 +346,7 @@ export function PropertyView({ row: r, onEdit }) {
           <p className="font-display text-2xl text-ink tabular-nums">{priceOf(r)}</p>
           {r.price_note && <p className="text-xs text-muted">{r.price_note}</p>}
         </div>
-        <span className="flex flex-wrap gap-1">{r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>)}</span>
+        <span className="flex flex-wrap gap-1">{onStatus ? <QuickStatus row={r} onChange={onStatus} /> : r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>)}</span>
       </div>
       {r.location && (
         <p className="flex items-start gap-1.5 text-charcoal">
@@ -388,7 +412,7 @@ export function PropertyView({ row: r, onEdit }) {
             <Pencil className="size-4" aria-hidden /> Edit in Inventory
           </Link>
         )}
-        <ShareButton get={() => shareOf(r)} up />
+        <ShareButton get={() => shareOf(r, web)} up />
         {r.id && <ToListing row={r} />}
       </div>
     </div>
@@ -396,8 +420,17 @@ export function PropertyView({ row: r, onEdit }) {
 }
 
 // a property as a message for a client: what it is, where, the price and the facts, its own
-// write-up, and the public Facebook post if there is one. Never the owner, the codes or the papers.
-function shareOf(r) {
+// write-up, and its public links: its page on our websites, then Rent.ph, Filipino Homes and the
+// Facebook post. The first of those is the card's link (the preview Messenger and Facebook show).
+// Never the owner, the codes or the papers.
+function shareOf(r, web) {
+  const links = [
+    web && `More photos and details: ${web}`,
+    r.rph_url && `Rent.ph: ${r.rph_url}`,
+    r.fh_url && `Filipino Homes: ${r.fh_url}`,
+    r.fb_post_url && `Facebook: ${r.fb_post_url}`,
+  ].filter(Boolean);
+  const main = web || r.rph_url || r.fh_url || r.fb_post_url || undefined;
   const today = new Date().toISOString().slice(0, 10);
   const facts = [
     r.furnishing,
@@ -408,7 +441,84 @@ function shareOf(r) {
   const text = r.summary?.trim()
     ? [title, `${priceOf(r)}${r.price_note ? ` (${r.price_note})` : ""}`, r.summary.trim()]
     : [title, `${priceOf(r)}${r.price_note ? ` (${r.price_note})` : ""}`, facts.join(" · "), r.specs && `Specs: ${r.specs}`, r.inclusions && `Inclusions: ${r.inclusions}`, r.payment_terms && `Payment terms: ${r.payment_terms}`];
-  return { title, text: text.filter(Boolean).join("\n\n"), url: r.fb_post_url || undefined };
+  // the card's own link goes as its link (the share sheet attaches it, the fallback menu adds it at
+  // the end), so the text lists the others
+  return { title, text: [...text, links.filter((l) => !l.endsWith(main)).join("\n")].filter(Boolean).join("\n\n"), url: main };
+}
+
+// The status badges as a button: tap, pick, saved. Picking one clears what it replaces (REPLACES);
+// tapping one that's on turns it off, as long as one stays.
+function QuickStatus({ row: r, onChange }) {
+  const [openMenu, setOpenMenu] = useState(null); // where it opens, on screen: the table scrolls inside its card, which would clip it
+  const [busy, setBusy] = useState(false);
+  const box = useRef(null);
+  useDismiss(box, !!openMenu, () => setOpenMenu(null));
+  // a scroll or resize would leave it floating in the wrong place: close it, as <select> does
+  useEffect(() => {
+    if (!openMenu) return;
+    const close = () => setOpenMenu(null);
+    addEventListener("scroll", close, true);
+    addEventListener("resize", close);
+    return () => {
+      removeEventListener("scroll", close, true);
+      removeEventListener("resize", close);
+    };
+  }, [openMenu]);
+  function toggle(e) {
+    if (openMenu) return setOpenMenu(null);
+    const b = e.currentTarget.getBoundingClientRect();
+    const right = innerWidth - b.right;
+    // below the badges, or above them when there isn't room for the eight choices
+    setOpenMenu(innerHeight - b.bottom > 360 ? { top: b.bottom + 4, right } : { bottom: innerHeight - b.top + 4, right });
+  }
+  async function pick(s) {
+    const on = r.status.includes(s);
+    const next = STATUSES.filter((x) => (x === s ? !on : r.status.includes(x) && !(!on && REPLACES[s]?.includes(x))));
+    if (!next.length) return;
+    setBusy(true);
+    try {
+      const saved = await run(supabase.from("inventory").update({ status: next }).eq("id", r.id).select().single());
+      onChange(saved);
+      toast(`Now ${next.join(", ")}`);
+      setOpenMenu(null);
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+    setBusy(false);
+  }
+  return (
+    <span ref={box} className="relative inline-flex" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-haspopup="menu"
+        aria-expanded={!!openMenu}
+        aria-label={`Status: ${r.status.join(", ") || "none"}. Change`}
+        className="press flex flex-wrap justify-end gap-1 rounded-full outline-offset-2"
+      >
+        {r.status.length ? r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>) : <Badge value="draft">No status</Badge>}
+        <ChevronDown className="size-3.5 self-center text-muted" aria-hidden />
+      </button>
+      {openMenu && (
+        <span role="menu" style={openMenu} className="fixed z-50 grid w-48 rounded-lg border border-line bg-surface p-1 shadow-[0_12px_32px_-8px_rgb(12_21_38/0.28)] [animation:fade-in_140ms_var(--ease-out)]">
+          {STATUSES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={r.status.includes(s)}
+              disabled={busy}
+              onClick={() => pick(s)}
+              className="flex min-h-10 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-fg hover:bg-sunken disabled:opacity-60"
+            >
+              <Check className={`size-4 shrink-0 ${r.status.includes(s) ? "text-fg" : "text-transparent"}`} aria-hidden />
+              <Badge value={TONE[s]}>{s}</Badge>
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  );
 }
 
 const FURNISHING = ["", "Fully furnished", "Semi-furnished", "Furnished", "Finished", "Unfurnished"];
