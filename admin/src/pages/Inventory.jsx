@@ -1,7 +1,7 @@
 // Inventory: every property the team can offer, from owners and other brokers (supabase/migrations
 // …_inventory.sql), in tabs for pre-selling, rentals and sales. Not the public listings: nothing here
 // shows on a site. A row opens its full record to read, copy the post summary from, or edit.
-import { Check, ChevronDown, Copy, ExternalLink, Globe, MapPin, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Check, ChevronDown, Copy, Download, ExternalLink, Globe, LayoutGrid, MapPin, Pencil, Plus, Search, SlidersHorizontal, Table2, Trash2 } from "lucide-react";
 import { Chip } from "./Matches";
 import { AREAS, inArea, LANDMARK, LANDMARKS, RADII, distance } from "../match";
 // the map (Leaflet, ~45 KB) loads when one is first shown, not with the table
@@ -17,8 +17,9 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { supabase, run, every } from "../supabase";
 import { api } from "../api";
 import { SkeletonRows, spring, toast } from "../motion";
-import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask, ShareButton, useDismiss } from "../ui";
+import { Badge, Empty, ErrorNote, Field, Modal, PageHeader, TabPanel, Tabs, btn, btnDanger, btnGhost, card, input, th, Select, ask, ShareButton, useDismiss, useStored } from "../ui";
 import { peso } from "../crm";
+import { download, toCsv } from "../csv";
 import { slugify } from "../../../src/listings/rules.js";
 
 const STATUSES = ["Pre-selling", "For Rent", "Rented", "For Sale", "Sold", "For Assume", "Reserved", "Unavailable"];
@@ -326,6 +327,7 @@ export default function Inventory() {
 // blocks, links as buttons. Edit opens the full form.
 export function PropertyView({ row: r, onEdit, onStatus }) {
   const today = new Date().toISOString().slice(0, 10);
+  const [view, setView] = useStored("inventory-card-view", "card"); // card or table, kept on this device
   // its page on the websites, once it's been put there and published: the link a client can open
   const [web, setWeb] = useState(null);
   useEffect(() => {
@@ -354,6 +356,30 @@ export function PropertyView({ row: r, onEdit, onStatus }) {
   ].filter(([, u]) => u);
   return (
     <div className="grid gap-5 text-sm">
+      {r.id && (
+        <div className="-mb-2 flex justify-end">
+          <span role="group" aria-label="Show as" className="inline-flex rounded-md border border-line p-0.5 text-xs">
+            {[
+              ["card", "Card", LayoutGrid],
+              ["table", "Table", Table2],
+            ].map(([v, label, Icon]) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                onClick={() => setView(v)}
+                className={`press inline-flex min-h-9 items-center gap-1.5 rounded px-2.5 font-medium ${view === v ? "bg-navy text-cream" : "text-muted hover:text-fg"}`}
+              >
+                <Icon className="size-3.5" aria-hidden /> {label}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
+      {r.id && view === "table" ? (
+        <PropertyTable row={r} />
+      ) : (
+        <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-display text-2xl text-ink tabular-nums">{priceOf(r)}</p>
@@ -414,6 +440,8 @@ export function PropertyView({ row: r, onEdit, onStatus }) {
           ))}
         </div>
       )}
+        </>
+      )}
       <div className="flex flex-wrap gap-2">
         {/* opened from a lead's matches there's no form here: Edit goes to the Inventory page */}
         {onEdit ? (
@@ -427,6 +455,102 @@ export function PropertyView({ row: r, onEdit, onStatus }) {
         )}
         <ShareButton get={() => shareOf(r, web)} up />
         {r.id && <ToListing row={r} />}
+      </div>
+    </div>
+  );
+}
+
+// Every field of a property, one row each, as its CSV column and value: for checking a card at a
+// glance or pasting into a sheet. Private fields (owner, codes, papers) are here too: it's the
+// team's own view, never what's shared with a client.
+const yes = (v) => (v == null ? "" : v ? "Yes" : "No");
+const FIELDS = [
+  ["Type", (r) => r.type],
+  ["Building", (r) => r.building],
+  ["Location", (r) => r.location],
+  ["Status", (r) => r.status.join(", ")],
+  ["Price (₱)", (r) => r.price],
+  ["Price, in words", (r) => r.price_text],
+  ["Price note", (r) => r.price_note],
+  ["Available", (r) => yes(r.available)],
+  ["Available from", (r) => r.available_from],
+  ["Furnishing", (r) => r.furnishing],
+  ["Pet-friendly", (r) => r.pet_friendly],
+  ["Specs", (r) => r.specs],
+  ["Inclusions", (r) => r.inclusions],
+  ["Payment terms", (r) => r.payment_terms],
+  ["Amenities and notes", (r) => r.notes],
+  ["Summary for posts", (r) => r.summary],
+  ["Owner or broker", (r) => r.source],
+  ["Owner's profile", (r) => r.source_url],
+  ["Facebook post", (r) => r.fb_post_url],
+  ["Posted on Facebook", (r) => r.fb_posted_on],
+  ["Facebook note", (r) => r.fb_post_note],
+  ["Rent.ph code", (r) => r.rph_code],
+  ["Rent.ph link", (r) => r.rph_url],
+  ["Filipino Homes code", (r) => r.fh_code],
+  ["Filipino Homes link", (r) => r.fh_url],
+  ["RAPA", (r) => yes(r.rapa)],
+  ["ATS", (r) => yes(r.ats)],
+  ["Pictures", (r) => yes(r.pictures)],
+  ["Map pin", (r) => (r.lat != null ? `${r.lat.toFixed(5)}, ${r.lng.toFixed(5)}${r.geo === "approx" ? " (neighbourhood only)" : ""}` : "")],
+  ["ID", (r) => r.id],
+  ["Added", (r) => r.created_at?.slice(0, 10)],
+  ["Last changed", (r) => r.updated_at?.slice(0, 10)],
+];
+
+function PropertyTable({ row: r }) {
+  const [empty, setEmpty] = useState(false); // the blank fields, shown only when asked
+  const rows = FIELDS.map(([label, get]) => [label, get(r)]);
+  const shown = empty ? rows : rows.filter(([, v]) => v != null && v !== "");
+  const csv = () => toCsv([r], FIELDS);
+  const name = `${slugify([r.type, r.building].filter(Boolean).join(" ")).slice(0, 60) || "property"}-${r.id}.csv`;
+  return (
+    <div className="grid gap-2">
+      <div className="overflow-x-auto rounded-lg border border-line">
+        <table className="w-full text-sm">
+          <tbody className="divide-y divide-line">
+            {shown.map(([label, v]) => (
+              <tr key={label} className="align-top">
+                <th scope="row" className="label w-40 bg-sunken/50 px-3 py-2 text-left font-normal whitespace-nowrap text-muted">
+                  {label}
+                </th>
+                <td className="px-3 py-2 break-words whitespace-pre-wrap text-fg">
+                  {/^https?:\/\//.test(String(v ?? "")) ? (
+                    <a href={v} target="_blank" rel="noopener noreferrer" className="underline decoration-gold/60 underline-offset-2">
+                      {v}
+                    </a>
+                  ) : v === "" || v == null ? (
+                    <span className="text-muted">—</span>
+                  ) : (
+                    String(v)
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className={btnGhost}
+          onClick={() =>
+            (navigator.clipboard?.writeText(csv()) ?? Promise.reject()).then(
+              () => toast("Copied as CSV: paste it into a sheet"),
+              () => toast("Couldn't copy. Use Download instead.", { error: true })
+            )
+          }
+        >
+          <Copy className="size-4" aria-hidden /> Copy as CSV
+        </button>
+        <button type="button" className={btnGhost} onClick={() => download(name, csv())}>
+          <Download className="size-4" aria-hidden /> Download CSV
+        </button>
+        <label className="ml-auto inline-flex min-h-10 cursor-pointer items-center gap-2 text-xs text-muted">
+          <input type="checkbox" checked={empty} onChange={(e) => setEmpty(e.target.checked)} className="size-4 accent-navy" />
+          Show empty fields
+        </label>
       </div>
     </div>
   );
