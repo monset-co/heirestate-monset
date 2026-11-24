@@ -35,6 +35,46 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+/* `dark:` in class names follows the switch (ThemeSwitch.jsx), not the device setting */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* Dark: the same roles after dusk. The navy rail and tab bar stay navy; the page, cards and text
+   turn; navy buttons lift so they still stand out on the dark page. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0c1526;
+  --color-surface: #131f36;
+  --color-sunken: #1a2843;
+  --color-stone: #1a2843;
+  --color-line: rgb(226 210 180 / 0.13);
+  --color-fg: #efe7d9;
+  --color-muted: #a7adb6;
+  --color-ink: #f6f1e8;
+  --color-charcoal: #d8d1c5;
+  --color-accent-ink: #d9b46a;
+  --color-gold-ink: #d9b46a;
+  --color-navy: #2f4a7c;
+  --color-navy-raised: #3a5890;
+  --color-side: #091120;
+  --color-side-2: #1a2843;
+}
+/* the coloured words the light theme writes dark (badges, chips, links), lightened; burgundy and
+   danger only as text, since as fills they carry cream text */
+[data-theme="dark"] {
+  .text-emerald-800, .text-emerald-600 { color: #6ee7b7; }
+  .text-sky-800, .text-sky-900 { color: #7dd3fc; }
+  .text-violet-800 { color: #c4b5fd; }
+  .text-teal-800 { color: #5eead4; }
+  .text-red-800 { color: #fca5a5; }
+  .text-orange-800 { color: #fdba74; }
+  .text-yellow-900 { color: #fde68a; }
+  .text-zinc-700 { color: #d4d4d8; }
+  .text-navy { color: #9fb6e0; }
+  .text-burgundy, .text-danger { color: #f0a3b3; }
+  ::selection { color: #0c1526; }
+  :focus-visible { outline-color: var(--color-gold); }
+}
+
 @layer base {
   html {
     background: var(--color-bg);

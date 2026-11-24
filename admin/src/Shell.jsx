@@ -3,6 +3,7 @@
 // tab grows into a labelled pill, with everything else under More, a bottom sheet the page eases
 // back behind. Each page rises in on navigation.
 import Bell from "./Bell";
+import ThemeSwitch from "./ThemeSwitch";
 import { BookOpen, BotMessageSquare, Boxes, FolderOpen, Presentation, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, Plus, Sparkles, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
 import { AnimatePresence, m as motion } from "motion/react";
 import { Suspense, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -118,7 +119,10 @@ export default function Shell() {
         {!wide && (
         <header className="on-navy sticky top-0 z-20 flex h-16 items-center justify-between gap-2 bg-side px-4 pt-[env(safe-area-inset-top)] text-cream print:hidden md:hidden">
           <Mark />
-          <Bell />
+          <span className="flex items-center">
+            <ThemeSwitch />
+            <Bell />
+          </span>
         </header>
         )}
         {wide && (

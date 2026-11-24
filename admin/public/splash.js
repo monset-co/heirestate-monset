@@ -1,6 +1,10 @@
 // The splash's picture (admin/index.html): the logo's build on a device's first open, after that
 // the finished logo. A file, not an inline script, so the admin's CSP (no inline scripts) lets it run.
 (function () {
+  // light or dark (ThemeSwitch.jsx), before anything is painted
+  try {
+    if (localStorage.getItem("heir-theme") === "dark") document.documentElement.dataset.theme = "dark";
+  } catch (e) {}
   var first = true;
   try {
     first = !localStorage.getItem("heir-admin-intro") && !matchMedia("(prefers-reduced-motion: reduce)").matches;

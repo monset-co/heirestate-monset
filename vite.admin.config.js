@@ -16,7 +16,7 @@ const serviceWorker = {
     // kept the first time they're used (admin/sw.js)
     const later = /pdf|PdfDeck|MapView|leaflet|-(cyrillic|greek|vietnamese|math|symbols|latin-ext)[-.]|\.woff$/i;
     const files = Object.keys(bundle).filter((f) => !later.test(f));
-    const assets = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/logo.svg", "/loader.svg", ...files.map((f) => `/${f}`)];
+    const assets = ["/", "/index.html", "/manifest.webmanifest", "/favicon.svg", "/icon-192.png", "/logo.svg", "/loader.svg", "/splash.css", "/splash.js", ...files.map((f) => `/${f}`)];
     const version = Date.now().toString(36);
     const source = readFileSync("admin/sw.js", "utf8").replace("__VERSION__", version).replace("__ASSETS__", JSON.stringify([...new Set(assets)]));
     this.emitFile({ type: "asset", fileName: "sw.js", source });

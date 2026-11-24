@@ -1,8 +1,9 @@
 /* The opening screen, painted before the app's script arrives: the site's loader on its dusk navy.
    A file, not a <style> in index.html, so the admin's CSP (style-src 'self') lets it apply. */
+/* only the margin: this file sits outside the app's CSS layers, so a body colour here would win
+   over the app's own background for good (the admin looked dark) */
 body {
   margin: 0;
-  background: #14213a;
 }
 #splash {
   position: fixed;

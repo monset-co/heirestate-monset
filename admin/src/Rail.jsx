@@ -8,6 +8,7 @@ import { m as motion, useMotionValue, useReducedMotion, useSpring, useTransform 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router";
 import Bell from "./Bell";
+import ThemeSwitch from "./ThemeSwitch";
 import { spring } from "./motion";
 import { useStored } from "./ui";
 
@@ -79,7 +80,12 @@ export default function Rail({ groups, section, slim, onToggle, me, mark, instal
 
       <div className={`relative z-[1] flex shrink-0 items-center gap-2 ${slim ? "h-20 flex-col justify-center" : "h-20 justify-between px-5"}`}>
         {slim ? <img src="/logo.svg" alt="Heir Estates" className="h-9 w-auto" /> : mark}
-        {!slim && <Bell />}
+        {!slim && (
+          <span className="flex items-center">
+            <ThemeSwitch />
+            <Bell />
+          </span>
+        )}
       </div>
 
       <div className="relative z-[1] mt-1 flex min-h-0 flex-1 flex-col">
@@ -141,6 +147,7 @@ export default function Rail({ groups, section, slim, onToggle, me, mark, instal
       <div className={`relative z-[1] shrink-0 border-t border-cream/10 ${slim ? "flex flex-col items-center gap-1 py-3" : "p-3"}`}>
         {slim ? (
           <>
+            <ThemeSwitch />
             <Bell />
             <span title={`${me.name}\n${me.email}`} className="mt-1 grid size-9 place-items-center rounded-full bg-side-2 text-xs font-semibold text-champagne">
               {me.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
