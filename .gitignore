@@ -16,3 +16,6 @@ leads-import.sql
 geocode-cache.json
 inventory-geo.sql
 __pycache__/
+
+# made by scripts/knowledge_to_sql.py, pasted into Supabase
+knowledge-load.sql

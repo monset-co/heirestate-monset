@@ -28,10 +28,8 @@
   // serve Gemini to some of them (Hong Kong, for one), so Mons failed for people whose internet
   // routes there. Only /api/* runs the Worker; the pages themselves are still served nearby.
   "placement": { "mode": "targeted", "region": "gcp:asia-southeast1" },
-  // Mons's memory (admin/worker/memory.js): embeddings from Workers AI, kept in a Vectorize index
-  // made once with: npx wrangler vectorize create heirestates-mons --dimensions=1024 --metric=cosine
-  // then add: "vectorize": [{ "binding": "MEMORY", "index_name": "heirestates-mons" }],
-  // (a deploy fails while the index doesn't exist; without it Mons says search by meaning isn't set up)
+  // Workers AI: the embeddings for Mons's memory and the knowledge base (admin/worker/memory.js,
+  // knowledge.js); the vectors themselves live in Supabase (pgvector)
   "ai": { "binding": "AI" },
   // reminders that have come due are emailed within 15 minutes
   "triggers": { "crons": ["*/15 * * * *"] },

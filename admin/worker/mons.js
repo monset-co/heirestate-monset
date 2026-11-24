@@ -9,11 +9,12 @@ import { db } from "./supabase.js";
 import * as google from "./google.js";
 import { notify } from "./push.js";
 import { recall } from "./memory.js";
+import * as knowledge from "./knowledge.js";
 import { WISHES, matches, tidyMobile } from "../src/match.js";
 
 const TZ = "Asia/Manila";
 const ROUNDS = 6; // tool calls per answer at most, so a confused model can't loop up a bill
-const HISTORY = 20; // earlier messages she sees
+const HISTORY = 10; // earlier messages she re-reads each time; older ones she finds with search_memory
 const MAX_RESULT = 12000; // characters of one tool's result
 const q = encodeURIComponent;
 const OPEN = ["new", "contacted", "viewing", "reserved"];
@@ -35,7 +36,7 @@ export function persona({ team }) {
   return `You are Mons, the personal assistant inside the Heir Estates admin, a real estate brokerage in Metro Cebu, Philippines.
 You are a secretary: warm, eager to help and thoroughly professional. Short, clear answers, like a capable assistant messaging her boss. Mirror the language you're written in (English, Tagalog, Cebuano or a mix).
 
-This is the team's shared chat, so each message says who wrote it. The newest message starts with the current Manila time and who is asking, in brackets: that is who you're talking with now.
+This is the team's shared chat, so each message says who wrote it. You see only its last 10 messages; for anything earlier ("like we discussed", "that client from last week"), use search_memory. The newest message starts with the current Manila time and who is asking, in brackets: that is who you're talking with now.
 The team: ${team.map((t) => `${t.name} <${t.email}>`).join("; ")}.
 
 How you work:
@@ -51,6 +52,7 @@ How you work:
 - Only act on what you were asked. If something you need is unclear (which lead, what time), ask first instead of guessing. Never say something is done unless the tool said so.
 - Times you pass to tools are Manila time, written YYYY-MM-DDTHH:MM. "Tomorrow morning" with no time given: 9:00. A viewing with no length given: one hour.
 - A task with no person named is the asker's own (assignee_email = their email). "Anyone" means no assignee.
+- Process, legal and requirements questions: answer from search_knowledge, not from general memory, and end with the source in brackets, e.g. (RA 6552, checked Nov 2026). If a passage isn't reviewed, say "not yet checked by our broker". If the knowledge base has nothing, say so and give your general understanding clearly marked as unverified.
 - Client details are personal data under the Data Privacy Act: share them only inside this admin, never suggest posting them elsewhere.`;
 }
 
@@ -438,9 +440,15 @@ const TOOLS = [
     },
   },
   {
+    name: "search_knowledge",
+    description:
+      "The real estate knowledge base: how things are done and what the rules are (reservation, Contract to Sell, buyer's papers, financing, Maceda Law refunds, License to Sell, broker licensing…). Use it for any how-to, process, legal or requirements question before answering from memory.",
+    parameters: { type: "object", properties: { question: { type: "string" } }, required: ["question"] },
+  },
+  {
     name: "search_memory",
     description:
-      "Search lead notes, WhatsApp messages and what leads first wrote by meaning, not exact words, in any language: 'who mentioned pets', 'clients worried about parking', 'someone asked about a unit near Ayala'. Best matches first; 'match' near 1 is close. For one known lead, get_lead is better.",
+      "Search lead notes, WhatsApp messages, what leads first wrote, and this team chat from before the last 10 messages, by meaning, not exact words, in any language. Use it when someone refers to something said earlier that you can't see. Examples: 'who mentioned pets', 'clients worried about parking', 'someone asked about a unit near Ayala'. Best matches first; 'match' near 1 is close. For one known lead, get_lead is better.",
     parameters: { type: "object", properties: { question: { type: "string" }, limit: { type: "integer", description: "Default 10, at most 20" } }, required: ["question"] },
   },
   {
@@ -522,6 +530,7 @@ function tools(env, token, team) {
         : [];
       return { ...lead, agent: agentName(lead.agent_id), notes, reminders, papers: checklist, files, whatsapp: wa };
     },
+    search_knowledge: ({ question }) => knowledge.search(env, u, question),
     search_memory: ({ question, limit }) => recall(env, u, String(question ?? "").slice(0, 500), limit),
     // the Matches tab's own scoring (admin/src/match.js), so she and the page agree
     async match_listings({ lead_id, limit }) {
@@ -618,7 +627,14 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
   });
   for (let round = 0; round < ROUNDS; round++) {
     const out = await gemini(env, body(contents));
-    usage.tokens += out.usageMetadata?.totalTokenCount ?? 0;
+    const m = out.usageMetadata ?? {};
+    usage.tokens += m.totalTokenCount ?? 0;
+    // what the tokens went on, for the breakdown under her reply (mons_messages.usage)
+    usage.rounds = (usage.rounds ?? 0) + 1;
+    usage.prompt = (usage.prompt ?? 0) + (m.promptTokenCount ?? 0) + (m.toolUsePromptTokenCount ?? 0);
+    usage.cached = (usage.cached ?? 0) + (m.cachedContentTokenCount ?? 0);
+    usage.output = (usage.output ?? 0) + (m.candidatesTokenCount ?? 0);
+    usage.thoughts = (usage.thoughts ?? 0) + (m.thoughtsTokenCount ?? 0);
     const content = out.candidates?.[0]?.content;
     const parts = content?.parts ?? [];
     const calls = parts.filter((p) => p.functionCall);
@@ -634,6 +650,7 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
           result = { error: e.said ? e.message : "That didn't work" };
         }
         const text = JSON.stringify(result);
+        usage.tools = { ...usage.tools, [name]: (usage.tools?.[name] ?? 0) + Math.min(text.length, MAX_RESULT) }; // characters each tool fed her
         return { functionResponse: { name, response: { result: text.length > MAX_RESULT ? `${text.slice(0, MAX_RESULT)}… (cut short: ask for fewer)` : result } } };
       })
     );
@@ -706,7 +723,7 @@ export async function chat(req, env, me, token) {
     const why = /location is not supported/i.test(e.message) ? "Google refused the server region this went through" : String(e.message).slice(0, 120);
     reply = `${changes.length ? "I made the changes below, then lost my connection before I could finish. Please check them." : "I'm sorry, I couldn't reach my thinking just now. Please try again in a moment."}\n\n(${why})`;
   }
-  const [hers] = await u.insert("mons_messages", { from_mons: true, body: reply.slice(0, 20000), changes, proposals, tokens: usage.tokens });
+  const [hers] = await u.insert("mons_messages", { from_mons: true, body: reply.slice(0, 20000), changes, proposals, tokens: usage.tokens, usage: { ...usage, tokens: undefined } });
   return json({ messages: [mine, hers] });
 }
 

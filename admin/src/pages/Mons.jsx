@@ -69,6 +69,20 @@ function Proposal({ p, onAnswer }) {
   );
 }
 
+// What a reply cost, small after the time; the full split on hover (mons_messages.usage)
+const kfmt = new Intl.NumberFormat("en-PH", { notation: "compact", maximumFractionDigits: 1 });
+function Cost({ u, total }) {
+  const cached = u.prompt ? Math.round((u.cached / u.prompt) * 100) : 0;
+  const tools = Object.entries(u.tools ?? {}).map(([k, v]) => `${k} ${kfmt.format(v)} chars`);
+  const detail = [`Read ${u.prompt.toLocaleString("en-PH")} (${cached}% cached)`, `wrote ${u.output.toLocaleString("en-PH")}`, `thought ${u.thoughts.toLocaleString("en-PH")}`, `${u.rounds} round${u.rounds > 1 ? "s" : ""}`, ...tools].join(" · ");
+  return (
+    <span className="tabular-nums" title={detail}>
+      {" "}
+      · {kfmt.format(total)} tokens{cached > 0 && ` · ${cached}% cached`}
+    </span>
+  );
+}
+
 // While she works: three bouncing dots and a line that moves on every couple of seconds
 const THINKING = ["Mons is thinking", "Looking it up", "Checking the records", "Putting it together"];
 function Typing() {
@@ -195,6 +209,7 @@ export default function Mons() {
                     <time dateTime={m.created_at} title={when(m.created_at)}>
                       {new Date(m.created_at).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" })}
                     </time>
+                    {m.usage?.rounds > 0 && <Cost u={m.usage} total={m.tokens} />}
                   </p>
                 </div>
               </li>

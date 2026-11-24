@@ -23,6 +23,7 @@ import * as gmail from "./gmail.js";
 import { notify } from "./push.js";
 import * as mons from "./mons.js";
 import * as memory from "./memory.js";
+import * as knowledge from "./knowledge.js";
 
 const json = (data, status = 200) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
 const fail = (error, status = 400) => json({ error }, status);
@@ -317,6 +318,7 @@ export default {
     ctx.waitUntil(remind(env));
     // Mons's memory: index the notes and WhatsApp messages written since the last run
     ctx.waitUntil(memory.index(env).catch((e) => console.error("mons memory", e)));
+    ctx.waitUntil(knowledge.embedPending(env).catch((e) => console.error("knowledge", e)));
     // the calendar's notification reminders, pushed to the agents they're for
     ctx.waitUntil(google.pushReminders(env, controller.scheduledTime).catch((e) => console.error("booking reminders", e)));
     // the bell keeps two months
