@@ -14,7 +14,10 @@ import * as drafts from "./drafts.js";
 import { WISHES, matches, tidyMobile } from "../src/match.js";
 
 const TZ = "Asia/Manila";
-const ROUNDS = 6; // tool calls per answer at most, so a confused model can't loop up a bill
+// one answer's lookups: rounds of tool calls, and calls in a round. Enough to go through a PDF
+// price list against the inventory; the last round has no tools, so she answers with what she has.
+const ROUNDS = 12;
+const CALLS = 12;
 const HISTORY = 10; // earlier messages she re-reads each time; older ones she finds with search_memory
 const MAX_RESULT = 12000; // characters of one tool's result
 const q = encodeURIComponent;
@@ -63,7 +66,7 @@ How you work:
 // what she may do herself, and what waits for Confirm
 const SMALL = ["add_note", "add_reminder", "complete_reminder", "add_task", "complete_task", "set_temperature", "add_inventory", "add_lead"];
 const BIG = ["set_stage", "assign_agent", "book", "update_inventory", "update_lead"];
-const WRITES = 10; // changes and proposals in one answer at most
+const WRITES = 25; // changes and proposals in one answer at most
 const MAX_ADD = 25; // listings in one add_inventory
 
 // the inventory fields she may fill in or change (the rest, like posting links and the map pin,
@@ -763,14 +766,20 @@ async function gemini(env, body) {
 // The talk: ask, let her call tools until she has an answer, return her words.
 // usage.tokens adds up what each round cost, even if a later round fails.
 export async function answer(env, { system, contents, run, usage = { tokens: 0 } }) {
-  const body = (c) => ({
+  const body = (c, last) => ({
     system_instruction: { parts: [{ text: system }] },
     contents: c,
     tools: [{ functionDeclarations: [...TOOLS, ...ACT_TOOLS] }],
+    // the last round: no more tools, so she sums up what she found instead of being cut off
+    ...(last && { tool_config: { function_calling_config: { mode: "NONE" } } }),
     generationConfig: { maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: "low" } }, // a secretary's lookups, not a proof: quicker answers
   });
   for (let round = 0; round < ROUNDS; round++) {
-    const out = await gemini(env, body(contents));
+    const last = round === ROUNDS - 1;
+    // said with the last tool results (same turn), so the turns still alternate
+    if (last && round > 0)
+      contents.at(-1).parts.push({ text: "[That's your last lookup for this message. Answer now with what you found, and say plainly what you didn't get to, so they can ask you to carry on.]" });
+    const out = await gemini(env, body(contents, last));
     const m = out.usageMetadata ?? {};
     usage.tokens += m.totalTokenCount ?? 0;
     // what the tokens went on, for the breakdown under her reply (mons_messages.usage)
@@ -781,14 +790,15 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
     usage.thoughts = (usage.thoughts ?? 0) + (m.thoughtsTokenCount ?? 0);
     const content = out.candidates?.[0]?.content;
     const parts = content?.parts ?? [];
-    const calls = parts.filter((p) => p.functionCall).slice(0, 8); // a round's lookups, bounded like its rounds
-    if (!calls.length) return parts.filter((p) => p.text && !p.thought).map((p) => p.text).join("").trim() || "Sorry, I lost my train of thought there. Could you ask me again?";
+    const calls = parts.filter((p) => p.functionCall);
+    if (!calls.length || last) return parts.filter((p) => p.text && !p.thought).map((p) => p.text).join("").trim() || "Sorry, I lost my train of thought there. Could you ask me again?";
     contents.push(content); // as sent, with its thought signatures, which Gemini needs back
     const results = await Promise.all(
-      calls.map(async ({ functionCall: { name, args } }) => {
+      // every call gets an answer (Gemini expects one each); past CALLS in a round, it's a "not now"
+      calls.map(async ({ functionCall: { name, args } }, i) => {
         let result;
         try {
-          result = run[name] ? await run[name](args ?? {}) : { error: `No tool ${name}` };
+          result = i >= CALLS ? { error: `Too many lookups at once: do this one in your next step` } : run[name] ? await run[name](args ?? {}) : { error: `No tool ${name}` };
         } catch (e) {
           console.error("mons tool", name, e);
           result = { error: e.said ? e.message : "That didn't work" };
@@ -800,7 +810,7 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
     );
     contents.push({ role: "user", parts: results });
   }
-  return "That took me more lookups than I'm allowed in one go. Could you narrow it down a little?";
+  return "That took me more lookups than I'm allowed in one go. Ask me to carry on, or narrow it down a little.";
 }
 
 // POST /api/mons { text }: save what they wrote, answer it, save the answer. The page shows both

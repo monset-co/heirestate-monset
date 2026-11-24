@@ -1,0 +1,21 @@
+/* The opening screen, painted before the app's script arrives: the site's loader on its dusk navy.
+   A file, not a <style> in index.html, so the admin's CSP (style-src 'self') lets it apply. */
+body {
+  margin: 0;
+  background: #14213a;
+}
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(38% 34% at 50% 50%, rgb(196 155 76 / 0.22), transparent 70%),
+    radial-gradient(120% 90% at 50% 105%, #1d2e4c, #14213a 45%, #0c1526);
+  transition: opacity 0.45s ease-out;
+}
+#splash img {
+  width: min(78vw, 440px);
+  height: auto;
+}

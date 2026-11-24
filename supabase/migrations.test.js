@@ -22,6 +22,7 @@ await db.exec(`
   create table storage.objects (id serial primary key, bucket_id text, name text);
   alter table storage.objects enable row level security;
   grant all on storage.objects to anon, authenticated;
+  grant usage on all sequences in schema storage to anon, authenticated;
   -- PGlite has neither pg_cron nor pgvector: a do-nothing scheduler, and vectors as real[] with a
   -- cosine-distance <=> (the HNSW indexes are dropped; the queries and policies are what's tested)
   create schema cron; create function cron.schedule(text, text, text) returns bigint language sql as 'select 1::bigint';
@@ -251,6 +252,12 @@ assert.equal((await admin("select count(*)::int n from mons_messages"))[0].n, 1,
 // the emailed code counts only for the account it was sent to
 await db.exec(`insert into second_factor (session_id, email, verified_at) values ('00000000-0000-4000-8000-000000000009', 'agent@example.com', now())`);
 assert.equal((await as("authenticated", "heirestates.fh@gmail.com", "select count(*)::int n from admin_users", [], "00000000-0000-4000-8000-000000000009"))[0].n, 0);
+
+// files dropped into Mons: any admin who has passed both steps can upload; nobody else
+await agent("insert into storage.objects (bucket_id, name) values ('mons-uploads', '00000000-0000-4000-8000-0000000000aa/flyer.pdf')");
+await admin("insert into storage.objects (bucket_id, name) values ('mons-uploads', '00000000-0000-4000-8000-0000000000bb/list.csv')");
+await fails(() => stranger("insert into storage.objects (bucket_id, name) values ('mons-uploads', 'x/y.pdf')"), /row-level security/);
+await fails(() => anon("insert into storage.objects (bucket_id, name) values ('mons-uploads', 'x/y.pdf')"), /row-level security/);
 
 // a bell link stays inside the admin
 await fails(() => db.exec("insert into notifications (email, title, url) values ('agent@example.com', 'x', '//evil.example')"), /notifications_url_check/);

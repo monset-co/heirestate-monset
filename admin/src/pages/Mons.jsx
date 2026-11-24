@@ -225,7 +225,9 @@ export default function Mons() {
       const attachments = await Promise.all(
         sending.map(async (f) => {
           const path = `${crypto.randomUUID()}/${f.name.replace(/[^\w.\- ]+/g, "_").slice(-120) || "file"}`;
-          await run(supabase.storage.from(UPLOADS).upload(path, f, { contentType: f.type }));
+          // the storage's own words, not run()'s "sign in again": a refused upload says which file and why
+          const { error } = await supabase.storage.from(UPLOADS).upload(path, f, { contentType: f.type });
+          if (error) throw new Error(`${f.name} couldn't be uploaded: ${error.message}${error.statusCode ? ` (${error.statusCode})` : ""}`);
           return { path, name: f.name, type: f.type, size: f.size };
         })
       );
