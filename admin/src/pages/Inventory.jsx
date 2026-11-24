@@ -41,6 +41,12 @@ const pinOf = (r) => PIN_OF[Object.keys(PIN_OF).find((s) => r.status.includes(s)
 const lookUp = (q) => api(`geo?q=${encodeURIComponent(q)}`).then((r) => r.places);
 const rentOnly = (r) => r.status.some((s) => s === "For Rent" || s === "Rented") && !r.status.some((s) => s === "For Sale" || s === "Sold" || s === "Pre-selling");
 const priceOf = (r) => (r.price != null ? `${peso(r.price)}${rentOnly(r) ? "/mo" : ""}` : r.price_text ?? "—");
+// the clipboard can refuse (no focus, plain http): then it says so instead of failing quietly
+const copy = (text) =>
+  (navigator.clipboard?.writeText(text) ?? Promise.reject()).then(
+    () => toast("Summary copied"),
+    () => toast("Couldn't copy it. Select the text and copy it instead.", { error: true })
+  );
 const date = (d) => d && new Date(`${d}T00:00`).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" });
 
 export default function Inventory() {
@@ -62,7 +68,9 @@ export default function Inventory() {
       setList(rows);
       // from a lead's matches: open that property
       const want = rows.find((r) => r.id === Number(params.get("open")));
-      if (want) show(want);
+      if (want) show(want, params.has("edit"));
+      // used once: closing the card and reloading shouldn't open it again
+      if (params.has("open")) setParams((p) => (p.delete("open"), p.delete("edit"), p), { replace: true });
     }, (e) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -321,11 +329,16 @@ export function PropertyView({ row: r, onEdit, onStatus }) {
   // its page on the websites, once it's been put there and published: the link a client can open
   const [web, setWeb] = useState(null);
   useEffect(() => {
+    setWeb(null);
     if (!r.id) return;
+    let alive = true;
     run(supabase.from("listings").select("slug, project").like("slug", `%-${r.id}`).eq("published", true).neq("status", "hidden").limit(1)).then(
-      ([l]) => setWeb(l ? `https://${l.project ? `${l.project}.` : ""}${DOMAIN}/listings/${l.slug}` : null),
-      () => setWeb(null)
+      ([l]) => alive && setWeb(l ? `https://${l.project ? `${l.project}.` : ""}${DOMAIN}/listings/${l.slug}` : null),
+      () => {}
     );
+    return () => {
+      alive = false;
+    };
   }, [r.id]);
   const blocks = [
     ["Specs", r.specs],
@@ -385,7 +398,7 @@ export function PropertyView({ row: r, onEdit, onStatus }) {
         <div className="rounded-lg bg-sunken/60 p-3">
           <div className="mb-1 flex items-center justify-between gap-2">
             <p className="label text-muted">Summary for posts</p>
-            <button type="button" className="press inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-fg hover:bg-surface" onClick={() => navigator.clipboard.writeText(r.summary).then(() => toast("Summary copied"))}>
+            <button type="button" className="press inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-fg hover:bg-surface" onClick={() => copy(r.summary)}>
               <Copy className="size-3.5" aria-hidden /> Copy
             </button>
           </div>
@@ -408,7 +421,7 @@ export function PropertyView({ row: r, onEdit, onStatus }) {
             <Pencil className="size-4" aria-hidden /> Edit
           </button>
         ) : (
-          <Link to={`/inventory?open=${r.id}`} className={btnGhost}>
+          <Link to={`/inventory?open=${r.id}&edit=1`} className={btnGhost}>
             <Pencil className="size-4" aria-hidden /> Edit in Inventory
           </Link>
         )}
@@ -456,7 +469,7 @@ function QuickStatus({ row: r, onChange }) {
   // a scroll or resize would leave it floating in the wrong place: close it, as <select> does
   useEffect(() => {
     if (!openMenu) return;
-    const close = () => setOpenMenu(null);
+    const close = (e) => !box.current?.contains(e?.target) && setOpenMenu(null);
     addEventListener("scroll", close, true);
     addEventListener("resize", close);
     return () => {
@@ -494,13 +507,13 @@ function QuickStatus({ row: r, onChange }) {
         aria-haspopup="menu"
         aria-expanded={!!openMenu}
         aria-label={`Status: ${r.status.join(", ") || "none"}. Change`}
-        className="press flex flex-wrap justify-end gap-1 rounded-full outline-offset-2"
+        className="press flex min-h-11 flex-wrap items-center justify-end gap-1 rounded-full outline-offset-2"
       >
         {r.status.length ? r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>) : <Badge value="draft">No status</Badge>}
         <ChevronDown className="size-3.5 self-center text-muted" aria-hidden />
       </button>
       {openMenu && (
-        <span role="menu" style={openMenu} className="fixed z-50 grid w-48 rounded-lg border border-line bg-surface p-1 shadow-[0_12px_32px_-8px_rgb(12_21_38/0.28)] [animation:fade-in_140ms_var(--ease-out)]">
+        <span role="menu" style={openMenu} className="fixed z-50 grid max-h-[calc(100dvh-1rem)] w-48 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_12px_32px_-8px_rgb(12_21_38/0.28)] [animation:fade-in_140ms_var(--ease-out)]">
           {STATUSES.map((s) => (
             <button
               key={s}
@@ -509,7 +522,7 @@ function QuickStatus({ row: r, onChange }) {
               aria-checked={r.status.includes(s)}
               disabled={busy}
               onClick={() => pick(s)}
-              className="flex min-h-10 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-fg hover:bg-sunken disabled:opacity-60"
+              className="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-sm text-fg hover:bg-sunken disabled:opacity-60"
             >
               <Check className={`size-4 shrink-0 ${r.status.includes(s) ? "text-fg" : "text-transparent"}`} aria-hidden />
               <Badge value={TONE[s]}>{s}</Badge>
@@ -690,7 +703,7 @@ function PropertyForm({ row, onSaved, buildings = [], owners = [] }) {
       <div>
         {area("summary", "Summary for posts", 4)}
         {f.summary && (
-          <button type="button" className={`${btnGhost} mt-2`} onClick={() => navigator.clipboard.writeText(f.summary).then(() => toast("Summary copied"))}>
+          <button type="button" className={`${btnGhost} mt-2`} onClick={() => copy(f.summary)}>
             <Copy className="size-4" aria-hidden /> Copy summary
           </button>
         )}
@@ -765,29 +778,33 @@ function ToListing({ row: r }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   async function go() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await make();
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+    setBusy(false);
+  }
+  async function make() {
     const title = [r.type, r.building ? `at ${r.building}` : r.location?.split(",")[0]].filter(Boolean).join(" ").slice(0, 140) || `Property ${r.id}`;
     const slug = `${slugify(title).slice(0, 70)}-${r.id}`.replace(/^-+/, "");
     const [made] = await run(supabase.from("listings").select("id").eq("slug", slug));
     if (made) return navigate(`/listings/${made.id}`);
     if (!(await ask({ title: "Put this on the websites?", body: "A draft listing is made from its type, place, price and write-up. Check it, add photos and the owner's authority, then publish it from Listings. Nothing shows on the sites until then.", yes: "Make the draft" }))) return;
-    setBusy(true);
-    try {
-      const rent = r.status.some((s) => s === "For Rent" || s === "Rented");
-      const type = rent ? "rental" : /\blots?\b/i.test(r.type ?? "") && !/house/i.test(r.type ?? "") ? "lot" : "resale";
-      const description = r.summary?.trim() || [r.specs && `Specs: ${r.specs}`, r.inclusions && `Inclusions: ${r.inclusions}`, r.payment_terms && `Payment terms: ${r.payment_terms}`, r.furnishing && `Furnishing: ${r.furnishing}`].filter(Boolean).join("\n\n");
-      const l = await run(
-        supabase
-          .from("listings")
-          .insert({ title, slug, type, location: r.location?.slice(0, 200) || null, price_min: r.price ?? null, unit_type: r.type?.slice(0, 80) || null, description: description.slice(0, 8000) || null, status: "available", published: false })
-          .select("id")
-          .single()
-      );
-      toast("Draft listing made. Check it and add photos, then publish.");
-      navigate(`/listings/${l.id}`);
-    } catch (e) {
-      toast(e.message, { error: true });
-    }
-    setBusy(false);
+    const rent = r.status.some((s) => s === "For Rent" || s === "Rented");
+    const type = rent ? "rental" : /\blots?\b/i.test(r.type ?? "") && !/house/i.test(r.type ?? "") ? "lot" : "resale";
+    const description = r.summary?.trim() || [r.specs && `Specs: ${r.specs}`, r.inclusions && `Inclusions: ${r.inclusions}`, r.payment_terms && `Payment terms: ${r.payment_terms}`, r.furnishing && `Furnishing: ${r.furnishing}`].filter(Boolean).join("\n\n");
+    const l = await run(
+      supabase
+        .from("listings")
+        .insert({ title, slug, type, location: r.location?.slice(0, 200) || null, price_min: r.price ?? null, unit_type: r.type?.slice(0, 80) || null, description: description.slice(0, 8000) || null, status: "available", published: false })
+        .select("id")
+        .single()
+    );
+    toast("Draft listing made. Check it and add photos, then publish.");
+    navigate(`/listings/${l.id}`);
   }
   return (
     <button type="button" className={btnGhost} onClick={go} disabled={busy}>

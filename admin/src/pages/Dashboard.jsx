@@ -381,7 +381,7 @@ function Pipeline({ leads }) {
         {!leads
           ? [0, 1, 2].map((i) => <Skeleton key={i} className="h-6 w-full" />)
           : Object.entries(STAGES).map(([k, label]) => (
-              <Link key={k} to={`/leads?stage=${k}`} className="group grid grid-cols-[6rem_1fr_2.5rem] items-center gap-3 text-sm">
+              <Link key={k} to={`/leads?list=all&stage=${k}`} className="group grid grid-cols-[6rem_1fr_2.5rem] items-center gap-3 text-sm">
                 <span className="text-muted group-hover:text-fg">{label}</span>
                 <span className="h-2.5 overflow-hidden rounded-full bg-sunken">
                   <span className={`block h-full rounded-full transition-[width] duration-700 ease-out ${OPEN.includes(k) ? "bg-navy" : k === "closed" ? "bg-gold" : "bg-muted/40"}`} style={{ width: `${(counts[k] / top) * 100}%` }} />

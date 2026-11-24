@@ -96,8 +96,10 @@ export function Chat({ thread, onChange }) {
     run(supabase.from("wa_messages").select(MSG).eq("thread_id", thread.id).order("created_at").limit(500)).then(setMsgs, (e) => setError(e.message));
     const ch = supabase
       .channel(`wa-messages-${thread.id}-${crypto.randomUUID()}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "wa_messages", filter: `thread_id=eq.${thread.id}` }, ({ new: n }) =>
-        setMsgs((l) => l && merge(l, n).sort((a, b) => a.created_at.localeCompare(b.created_at)))
+      .on("postgres_changes", { event: "*", schema: "public", table: "wa_messages", filter: `thread_id=eq.${thread.id}` }, ({ eventType, new: n, old }) =>
+        eventType === "DELETE"
+          ? setMsgs((l) => l?.filter((m) => m.id !== old.id))
+          : n?.id && setMsgs((l) => l && merge(l, n).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))))
       )
       .subscribe();
     return () => supabase.removeChannel(ch);

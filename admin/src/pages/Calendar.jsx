@@ -139,9 +139,9 @@ export default function Calendar() {
     // opened from a lead: start a viewing for them
     const lead = Number(params.get("lead"));
     if (lead)
-      run(supabase.from("leads").select("id, name, email, viewing_time, listing:listings(title)").eq("id", lead).single()).then(
+      run(supabase.from("leads").select("id, name, email, viewing_time, listing:listings(title)").eq("id", lead).maybeSingle()).then(
         (l) =>
-          setBooking({
+          !l ? setError("That lead no longer exists.") : setBooking({
             ...blank(),
             title: `Viewing: ${l.name}${l.listing ? `, ${l.listing.title}` : ""}`,
             guests: l.email ? [l.email] : [],
@@ -151,7 +151,13 @@ export default function Calendar() {
           }),
         (e) => setError(e.message)
       );
-    if (params.has("google") || params.has("lead")) setParams({}, { replace: true });
+    // opened from a link to a day (a booking Mons made): that day, its bookings open beside it
+    const on = params.get("day");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(on ?? "") && addDays(on, 0) === on) {
+      setCursor(on);
+      setDay(on);
+    }
+    if (params.has("google") || params.has("lead") || params.has("day")) setParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -996,7 +1002,7 @@ function Guests({ value, people, onChange, onPick }) {
         {value.map((g) => (
           <span key={g} className="flex max-w-full items-center gap-1 rounded-full bg-sunken py-0.5 pr-1 pl-2.5 text-xs text-fg">
             <span className="truncate">{nameOf(g) ? `${nameOf(g)} · ${g}` : g}</span>
-            <button type="button" onClick={() => onChange(value.filter((x) => x !== g))} aria-label={`Remove ${g}`} className="rounded-full p-0.5 text-muted hover:bg-line hover:text-fg">
+            <button type="button" onClick={() => onChange(value.filter((x) => x !== g))} aria-label={`Remove ${g}`} className="-my-1.5 grid size-8 place-items-center rounded-full text-muted hover:bg-line hover:text-fg">
               <X className="size-3.5" aria-hidden />
             </button>
           </span>

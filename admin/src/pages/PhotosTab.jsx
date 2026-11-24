@@ -88,8 +88,8 @@ export default function PhotosTab({ listingId }) {
     if (!(await ask({ title: "Remove this photo?", body: "It's deleted for good.", yes: "Remove", danger: true }))) return;
     try {
       await run(supabase.from("listing_photos").delete().eq("id", p.id));
-      await run(supabase.storage.from(PHOTOS).remove([p.storage_key]));
-      setPhotos((ps) => ps.filter((x) => x.id !== p.id));
+      setPhotos((ps) => ps.filter((x) => x.id !== p.id)); // gone from the listing, whatever storage says next
+      await supabase.storage.from(PHOTOS).remove([p.storage_key]);
       toast("Photo removed");
     } catch (err) {
       setError(err.message);

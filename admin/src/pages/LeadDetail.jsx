@@ -28,10 +28,20 @@ export default function LeadDetail() {
   const tab = TABS.includes(params.get("tab")) ? params.get("tab") : "Overview";
 
   useEffect(() => {
-    run(supabase.from("leads").select("*, listing:listings(id, title)").eq("id", id).maybeSingle()).then((row) => (row ? setLead(row) : setError("No such lead. It may have been deleted.")), (e) => setError(e.message));
-    run(supabase.from("lead_notes").select(NOTE).eq("lead_id", id).order("created_at", { ascending: false })).then(setNotes, (e) => setError(e.message));
-    run(supabase.from("wa_threads").select(THREAD).eq("lead_id", id).limit(1).maybeSingle()).then(setChat, () => {});
-    run(supabase.from("lead_overview").select("*").eq("id", id).maybeSingle()).then(setOverview, () => {});
+    let alive = true;
+    const keep = (set) => (v) => alive && set(v);
+    setLead(null);
+    setNotes(null);
+    setChat(null);
+    setOverview(null);
+    setError("");
+    run(supabase.from("leads").select("*, listing:listings(id, title)").eq("id", id).maybeSingle()).then(keep((row) => (row ? setLead(row) : setError("No such lead. It may have been deleted."))), keep((e) => setError(e.message)));
+    run(supabase.from("lead_notes").select(NOTE).eq("lead_id", id).order("created_at", { ascending: false })).then(keep(setNotes), keep((e) => setError(e.message)));
+    run(supabase.from("wa_threads").select(THREAD).eq("lead_id", id).limit(1).maybeSingle()).then(keep(setChat), () => {});
+    run(supabase.from("lead_overview").select("*").eq("id", id).maybeSingle()).then(keep(setOverview), () => {});
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   // the Data Privacy Act: a person may ask for their details to be deleted

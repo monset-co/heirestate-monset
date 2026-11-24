@@ -316,7 +316,7 @@ export default {
     }
   },
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(remind(env));
+    ctx.waitUntil(remind(env).catch((e) => console.error("reminders", e)));
     // Mons's memory: index the notes and WhatsApp messages written since the last run
     ctx.waitUntil(memory.index(env).catch((e) => console.error("mons memory", e)));
     ctx.waitUntil(knowledge.embedPending(env).catch((e) => console.error("knowledge", e)));

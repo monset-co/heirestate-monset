@@ -81,7 +81,7 @@ const tone = {
   "inv-assume": "bg-yellow-400/30 text-yellow-900",
   "inv-for-sale": "bg-sky-400/20 text-sky-800",
   "inv-reserved": "bg-zinc-500/15 text-zinc-700",
-  "inv-unavailable": "bg-neutral-900 text-white",
+  "inv-unavailable": "bg-neutral-900 text-white dark:bg-neutral-700",
 };
 export function Badge({ value, children }) {
   return (
@@ -150,14 +150,14 @@ export function Drawer({ open, onClose, title, head, children }) {
   }, [open]);
   return (
     <dialog ref={ref} onClose={onClose} onClick={(e) => e.target === e.currentTarget && onClose()} className="side flex-col border-l border-line bg-surface p-0 text-fg shadow-[-24px_0_48px_-12px_rgb(12_21_38/0.35)] open:flex">
-      <div className="flex items-center gap-2 border-b border-line px-5 py-2.5">
+      <div className="flex items-center gap-2 border-b border-line px-5 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5">
         <h2 className="mr-auto font-display text-xl text-ink">{title}</h2>
         {head}
         <button onClick={onClose} className="press -mr-2 rounded-md p-3 text-muted hover:bg-sunken hover:text-fg" aria-label="Close">
           <X className="size-4" />
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">{open && children}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto pb-[env(safe-area-inset-bottom)]">{open && children}</div>
     </dialog>
   );
 }

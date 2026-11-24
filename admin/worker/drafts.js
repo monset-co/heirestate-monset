@@ -10,7 +10,11 @@ const BLANK = /\{\{\s*([^{}]{1,80}?)\s*\}\}/g;
 // the parts of a Word file that hold its words: the body, headers and footers
 const TEXT_PART = /^word\/(document|header\d*|footer\d*)\.xml$/;
 
-const unxml = (s) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+const unxml = (s) =>
+  s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 const xml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 async function storage(env, token, bucket, path, init = {}) {
@@ -58,7 +62,7 @@ export function fillParagraph(p, values) {
 
 // blanks matched loosely: "{{ Client Name }}" takes the value given for "client name"
 const key = (s) => s.toLowerCase().replace(/\s+/g, " ").trim();
-const valueOf = (values, blank) => values[key(blank)];
+const valueOf = (values, blank) => (Object.hasOwn(values, key(blank)) ? values[key(blank)] : undefined);
 
 export function fillXml(doc, values) {
   return doc.replace(/<w:p[ >][\s\S]*?<\/w:p>/g, (p) => fillParagraph(p, values));
@@ -74,12 +78,14 @@ export function wordsOf(files) {
 }
 
 // ── Word and Excel files dropped into the chat, as text Gemini can read (it can't read them as they are)
-export const docxText = (bytes) => wordsOf(unzipSync(bytes)).join("\n");
+// only their text parts, none over 30 MB unpacked: pictures (and zip bombs) stay packed
+const textOnly = { filter: (f) => /\.(xml|rels)$/.test(f.name) && f.originalSize < 30e6 };
+export const docxText = (bytes) => wordsOf(unzipSync(bytes, textOnly)).join("\n");
 
 // every sheet of a workbook as tab-separated rows, under its name. Cells that are text point into
 // sharedStrings; dates come as Excel's day numbers, which she's told about.
 export function xlsxText(bytes) {
-  const z = unzipSync(bytes);
+  const z = unzipSync(bytes, textOnly);
   const read = (n) => (z[n] ? strFromU8(z[n]) : "");
   const shared = [...read("xl/sharedStrings.xml").matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => [...m[1].matchAll(/<t(?:\s[^>]*)?>([^<]*)<\/t>/g)].map((t) => unxml(t[1])).join(""));
   const rels = Object.fromEntries([...read("xl/_rels/workbook.xml.rels").matchAll(/<Relationship\b[^>]*>/g)].map((m) => [m[0].match(/Id="([^"]+)"/)?.[1], m[0].match(/Target="([^"]+)"/)?.[1]]));
@@ -95,7 +101,9 @@ export function xlsxText(bytes) {
           const type = c[1].match(/t="([^"]+)"/)?.[1];
           const v = c[2]?.match(/<v>([^<]*)<\/v>/)?.[1];
           const value = type === "s" ? shared[Number(v)] : type === "inlineStr" ? [...(c[2] ?? "").matchAll(/<t(?:\s[^>]*)?>([^<]*)<\/t>/g)].map((t) => unxml(t[1])).join("") : type === "b" ? (v === "1" ? "TRUE" : "FALSE") : v != null ? unxml(v) : "";
-          cells[ref ? col(ref) : cells.length] = String(value ?? "").replace(/\s+/g, " ").trim();
+          // empty styled cells (a sheet formatted out to column XFD) aren't kept: no 16k-slot rows
+          const text = String(value ?? "").replace(/\s+/g, " ").trim();
+          if (text) cells[ref ? col(ref) : cells.length] = text;
         }
         return Array.from(cells, (x) => x ?? "").join("\t").replace(/\t+$/, "");
       });
@@ -135,7 +143,7 @@ export async function readTemplate(env, token, u, id) {
 export async function draft(env, token, u, { template_id, values, file_name }) {
   const { t, files } = await template(env, token, u, template_id);
   // [{ blank, value }], as the model sends them
-  const given = Object.fromEntries((Array.isArray(values) ? values : []).map((v) => [key(String(v?.blank ?? "")), String(v?.value ?? "").slice(0, 4000)]).filter(([k, v]) => k && v.trim()));
+  const given = Object.fromEntries((Array.isArray(values) ? values : []).map((v) => [key(String(v?.blank ?? "")), String(v?.value ?? "").replace(/[ --]/g, "").slice(0, 4000)]).filter(([k, v]) => k && v.trim()));
   const out = {};
   for (const [n, data] of Object.entries(files)) out[n] = TEXT_PART.test(n) ? strToU8(fillXml(strFromU8(data), given)) : data;
   const left = blanksIn(wordsOf(out));

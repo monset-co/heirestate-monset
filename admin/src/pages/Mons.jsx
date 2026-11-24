@@ -43,6 +43,9 @@ function DocPreview({ file, onClose }) {
       try {
         const { signedUrl } = await run(supabase.storage.from(UPLOADS).createSignedUrl(file.path, 300));
         const blob = await (await fetch(signedUrl)).blob();
+        if (!alive) return;
+        href = URL.createObjectURL(blob);
+        setState({ loading: true, href });
         const { renderAsync } = await import("docx-preview");
         if (!alive || !host.current) return;
         const root = host.current.shadowRoot ?? host.current.attachShadow({ mode: "open" });
@@ -53,10 +56,9 @@ function DocPreview({ file, onClose }) {
         const sheet = new CSSStyleSheet();
         sheet.replaceSync([...styles.querySelectorAll("style")].map((s) => s.textContent).join("\n"));
         root.adoptedStyleSheets = [sheet];
-        href = URL.createObjectURL(blob);
         if (alive) setState({ href });
       } catch (e) {
-        if (alive) setState({ error: e.message || "The draft couldn't be shown" });
+        if (alive) setState({ href, error: href ? "The preview can't be shown on this device, but you can download the Word file." : e.message || "The draft couldn't be shown" });
       }
     })();
     return () => {
@@ -101,16 +103,21 @@ const STARTERS = ["Brief me on today", "Which hot leads need a follow-up?", "Any
 function Rich({ text = "" }) {
   // the odd heading, divider or "* " bullet she slips in, made plain
   text = String(text ?? "").replace(/^#{1,6}\s+/gm, "").replace(/^\s*(---+|\*\*\*+)\s*$/gm, "").replace(/^(\s*)[*-]\s+/gm, "$1• ").replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1$2").replace(/\n{3,}/g, "\n\n");
-  // links only to the admin's own pages: one leading slash, never "//host" or "/\host" (off-site)
+  return inline(text);
+}
+// links only to the admin's own pages: one leading slash, never "//host" or "/\host" (off-site).
+// Bold is read again for links inside it (**[Ana](/leads/5)** is common); a full stop she puts
+// inside the brackets is left out of the address.
+function inline(text) {
   return text.split(/(\[[^\]]+\]\(\/(?![/\\])[^)\s]*\)|\*\*[^*]+\*\*)/g).map((s, i) => {
     const link = s.match(/^\[([^\]]+)\]\((\/(?![/\\])[^)\s]*)\)$/);
     if (link)
       return (
-        <Link key={i} to={link[2]} className="font-medium underline decoration-gold/60 underline-offset-2 hover:decoration-gold">
+        <Link key={i} to={link[2].replace(/[.,;:!?]+$/, "")} className="font-medium underline decoration-gold/60 underline-offset-2 hover:decoration-gold">
           {link[1]}
         </Link>
       );
-    if (/^\*\*[^*]+\*\*$/.test(s)) return <strong key={i}>{s.slice(2, -2)}</strong>;
+    if (/^\*\*[^*]+\*\*$/.test(s)) return <strong key={i}>{inline(s.slice(2, -2))}</strong>;
     return <Fragment key={i}>{s}</Fragment>;
   });
 }
@@ -120,9 +127,12 @@ const STATE = { done: "Done", declined: "Not done", failed: "Didn't go through" 
 function Proposal({ p, onAnswer }) {
   const [busy, setBusy] = useState(false);
   const answer = async (ok) => {
-    setBusy(true);
-    await onAnswer(ok);
-    setBusy(false);
+    setBusy(ok ? "confirm" : "no");
+    try {
+      await onAnswer(ok);
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <div className="mt-2 rounded-lg border border-line bg-bg/60 p-2.5 text-xs">
@@ -133,10 +143,10 @@ function Proposal({ p, onAnswer }) {
       </p>
       {p.state === "pending" ? (
         <div className="mt-2 flex gap-2">
-          <button type="button" className={`${btn} !px-3 !py-1.5 !text-xs`} disabled={busy} onClick={() => answer(true)}>
-            Confirm
+          <button type="button" className={`${btn} !px-3 !py-1.5 !text-xs`} disabled={!!busy} onClick={() => answer(true)}>
+            {busy === "confirm" ? "Confirming…" : "Confirm"}
           </button>
-          <button type="button" className={`${btnGhost} !px-3 !py-1.5 !text-xs`} disabled={busy} onClick={() => answer(false)}>
+          <button type="button" className={`${btnGhost} !px-3 !py-1.5 !text-xs`} disabled={!!busy} onClick={() => answer(false)}>
             Not now
           </button>
         </div>
@@ -301,7 +311,7 @@ export default function Mons() {
         <MonsUsage className="w-full sm:w-64" />
       </header>
 
-      <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-bg/60 px-3 py-4 sm:px-5" aria-live="polite">
+      <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-bg/60 px-3 py-4 sm:px-5" aria-live="polite" aria-relevant="additions">
         {!msgs ? (
           <SkeletonRows n={3} />
         ) : (
@@ -391,7 +401,7 @@ export default function Mons() {
               <li key={i} className="flex max-w-[16rem] items-center gap-1 rounded-full border border-line bg-surface py-1 pr-1 pl-2.5 text-xs">
                 <Paperclip className="size-3 shrink-0 text-muted" aria-hidden />
                 <span className="truncate">{f.name}</span>
-                <button type="button" onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))} className="rounded-full p-0.5 text-muted hover:text-fg" aria-label={`Remove ${f.name}`}>
+                <button type="button" onClick={() => setFiles((fs) => fs.filter((_, j) => j !== i))} className="-my-1.5 -mr-1 grid size-8 place-items-center rounded-full text-muted hover:text-fg" aria-label={`Remove ${f.name}`}>
                   <X className="size-3.5" aria-hidden />
                 </button>
               </li>
@@ -418,7 +428,7 @@ export default function Mons() {
               }}
               // Enter sends only with a real keyboard: a phone's Enter is the new line
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && matchMedia("(pointer: fine)").matches && send(e)}
-              placeholder="Ask Mons… (Shift+Enter for a new line)"
+              placeholder={matchMedia("(pointer: fine)").matches ? "Ask Mons… (Shift+Enter for a new line)" : "Ask Mons…"}
               className={`${input} resize-none`}
             />
           </label>

@@ -1,5 +1,5 @@
 import { lazy, useEffect, useState } from "react";
-import { createBrowserRouter, Navigate, RouterProvider } from "react-router";
+import { createBrowserRouter, Navigate, RouterProvider, useRouteError } from "react-router";
 import { MotionConfig } from "motion/react";
 import { supabase, run, SETTING_PASSWORD } from "./supabase";
 import { api } from "./api";
@@ -25,10 +25,33 @@ const Library = lazy(() => import("./pages/Library"));
 const Mons = lazy(() => import("./pages/Mons"));
 
 // pages load when first opened, so the phone downloads the dashboard first, not the whole admin
+// A page that throws shows this in its place, with the rail and tab bar still there, instead of
+// react-router's bare "Unexpected Application Error!" over the whole admin.
+function PageError() {
+  const e = useRouteError();
+  console.error(e);
+  // a page's file from an older deploy, gone from the server: a reload fetches the new one
+  const stale = /dynamically imported module|Importing a module script failed|Failed to fetch/i.test(String(e?.message ?? e));
+  return (
+    <div className={`${card} mx-auto mt-6 grid max-w-md gap-3 p-6 text-sm`} role="alert">
+      <h1 className="font-display text-xl text-ink">{stale ? "The admin was just updated" : "Something went wrong on this page"}</h1>
+      <p className="text-muted">{stale ? "Reload to get the new version." : "Reload to try again. If it keeps happening, tell the admin team what you were doing."}</p>
+      {!stale && <p className="rounded-md bg-sunken px-3 py-2 font-mono text-xs break-words text-muted">{String(e?.message ?? e).slice(0, 300)}</p>}
+      <button type="button" className={btn} onClick={() => location.reload()}>
+        Reload
+      </button>
+    </div>
+  );
+}
+
 const router = createBrowserRouter([
   {
     element: <Shell />,
+    errorElement: <PageError />,
     children: [
+      {
+        errorElement: <PageError />,
+        children: [
       { index: true, element: <Dashboard /> },
       { path: "leads", element: <Leads /> },
       { path: "leads/:id", element: <LeadDetail /> },
@@ -49,6 +72,8 @@ const router = createBrowserRouter([
       { path: "guide", element: <Guide /> },
       { path: "mons", element: <Mons /> },
       { path: "*", element: <Navigate to="/" replace /> },
+        ],
+      },
     ],
   },
 ]);

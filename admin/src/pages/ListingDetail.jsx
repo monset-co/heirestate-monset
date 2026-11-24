@@ -23,7 +23,13 @@ export default function ListingDetail() {
   const tab = TABS.includes(params.get("tab")) ? params.get("tab") : "Details";
 
   useEffect(() => {
-    run(supabase.from("listings").select("*").eq("id", id).maybeSingle()).then((row) => (row ? setL(row) : setError("No such listing.")), (e) => setError(e.message));
+    let alive = true;
+    setL(null);
+    setError("");
+    run(supabase.from("listings").select("*").eq("id", id).maybeSingle()).then((row) => alive && (row ? setL(row) : setError("No such listing.")), (e) => alive && setError(e.message));
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   if (!l)

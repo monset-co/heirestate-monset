@@ -121,7 +121,7 @@ export function Toaster() {
                   t.action.run();
                   dismiss(t.id);
                 }}
-                className="press rounded-md bg-cream/10 px-2.5 py-1 font-semibold text-gold hover:bg-cream/15"
+                className="press min-h-10 rounded-md bg-cream/10 px-3 py-1 font-semibold text-gold hover:bg-cream/15"
               >
                 {t.action.label}
               </button>

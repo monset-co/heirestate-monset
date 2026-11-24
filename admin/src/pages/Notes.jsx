@@ -22,7 +22,7 @@ const ANYONE = "#anyone";
 const tool = "press grid min-h-9 min-w-9 place-items-center rounded p-1.5 opacity-60 hover:bg-black/5 hover:opacity-100";
 const today = () => new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd, local
 const day = new Intl.DateTimeFormat("en-PH", { month: "short", day: "numeric" });
-const URL_RE = /(https?:\/\/[^\s]+)/g;
+const URL_RE = /(https?:\/\/[^\s]*[^\s.,;:!?)\]])/g; // a trailing full stop or bracket stays text
 
 // which column a note sits in
 const columnOf = (t) => (t.private ? MINE : t.assignee ?? ANYONE);

@@ -11,7 +11,7 @@ import { LOOKING_TO, fit, matches } from "../match";
 import { peso } from "../crm";
 
 const TONES = {
-  navy: "bg-navy/10 text-navy",
+  navy: "bg-navy/10 text-navy dark:bg-navy/40",
   violet: "bg-violet-600/12 text-violet-800",
   sky: "bg-sky-600/12 text-sky-800",
   teal: "bg-teal-600/12 text-teal-800",

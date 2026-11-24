@@ -46,7 +46,7 @@ The team: ${team.map((t) => `${t.name} <${t.email}>`).join("; ")}.
 How you work:
 - Look things up with your tools before answering. Never invent a lead, property, price, date or file. If a tool finds nothing, say so.
 - Lead stages: new, contacted, viewing, reserved (these four are "open"), closed, lost. Hot/warm/cold is a lead's temperature. A reserved buyer has 30 days to complete their papers.
-- Link every lead you mention as a Markdown link, [Name](/leads/<id>). Other pages: /inventory, /calendar, /notes, /documents, /whatsapp.
+- Link what you mention to the thing itself, as a Markdown link: a lead [Name](/leads/<id>), a property [Studio, Avida Riala](/inventory?open=<id>), a day on the calendar [Fri 28 Nov](/calendar?day=YYYY-MM-DD). Other pages: /notes, /documents, /whatsapp.
 - Format for a chat bubble: short lines, "- " bullets, **bold** sparingly. No headings, tables or dividers.
 - Peso amounts as ₱1,234,567. Dates in plain words ("Fri 28 Nov, 3pm").
 - For a debriefing, cover: reminders due or overdue, today's and tomorrow's bookings, hot and reserved leads, and tasks that are urgent or due.
@@ -134,6 +134,37 @@ function mobileOf(raw) {
 // only known fields; empty strings dropped; null kept on an update, to clear a field
 const pick = (o, props, clear) =>
   Object.fromEntries(Object.entries(o ?? {}).filter(([k, v]) => k in props && v !== undefined && v !== "" && (clear || v !== null)));
+// What she sends, made the shape the database takes, or refused in words she can act on: whole
+// pesos ("₱5.5M" isn't one), real dates, full links, lists from their allowed choices. Checked
+// before a card is offered, so Confirm doesn't fail on it later.
+function clean(c, props) {
+  const out = {};
+  for (const [k, v] of Object.entries(c)) {
+    const p = props[k];
+    const name = k.replace(/_/g, " ");
+    if (v === null) out[k] = null;
+    else if (p.type === "integer") {
+      const n = Number(String(v).replace(/[₱,\s]/g, ""));
+      if (!Number.isSafeInteger(n) || n < 0) throw fail(`The ${name} should be a whole number of pesos, not “${v}”`);
+      out[k] = n;
+    } else if (p.type === "boolean") out[k] = v === true || v === "true" || v === "yes";
+    else if (p.type === "array") {
+      const a = [].concat(v).map((x) => String(x).trim()).filter(Boolean);
+      const bad = p.items?.enum && a.find((x) => !p.items.enum.includes(x));
+      if (bad) throw fail(`“${bad}” isn't a ${name} choice: ${p.items.enum.join(", ")}`);
+      out[k] = a;
+    } else {
+      const t = String(v).trim();
+      if (p.enum && !p.enum.includes(t)) throw fail(`“${t}” isn't a ${name} choice: ${p.enum.join(", ")}`);
+      if (/YYYY-MM-DD/.test(p.description ?? "") && !isDay(t)) throw fail(`The ${name} should be a date like 2026-12-01, not “${t}”`);
+      if (/_url$/.test(k) && !/^https?:\/\/\S+$/.test(t)) throw fail(`The ${name} should be a full link starting with https://`);
+      out[k] = t;
+    }
+  }
+  return out;
+}
+const isDay = (t) => /^\d{4}-\d{2}-\d{2}$/.test(t) && new Date(`${t}T00:00:00Z`).toISOString().slice(0, 10) === t;
+const fields = (o, props, clear) => clean(pick(o, props, clear), props);
 // "price ₱5,500,000, available yes" for her report and the Confirm button
 const peso = new Intl.NumberFormat("en-PH");
 const listChanges = (c) =>
@@ -149,6 +180,9 @@ function dbSaid(e) {
   return fail(t.slice(0, 200));
 }
 const nameOfListing = (r) => [r.type, r.building ?? r.location].filter(Boolean).join(", ") || `listing #${r.id}`;
+// links to the thing itself, not just its tab: a property's card, a booking's day
+const invAt = (r) => `/inventory?open=${r.id}`;
+const dayAt = (start) => (/^\d{4}-\d{2}-\d{2}/.test(start ?? "") ? `/calendar?day=${start.slice(0, 10)}` : "/calendar");
 
 const ACT_TOOLS = [
   {
@@ -257,6 +291,7 @@ const fail = (error) => Object.assign(new Error(error), { said: true }); // a re
 export function actions(env, token, me, team) {
   const u = db(env, token);
   const lead = async (id) => {
+    if (!Number.isSafeInteger(Number(id))) throw fail(`Which lead? I need its number (from search_leads), not “${id}”`);
     const [l] = await u.get(`leads?select=id,name,agent_id,stage&id=eq.${Number(id)}`);
     if (!l) throw fail(`There's no lead #${id}`);
     return l;
@@ -264,6 +299,7 @@ export function actions(env, token, me, team) {
   const person = (email) => team.find((t) => t.email === String(email ?? "").trim().toLowerCase());
   const at = (l) => `/leads/${l.id}`;
   const listing = async (id) => {
+    if (!Number.isSafeInteger(Number(id))) throw fail(`Which property? I need its number (from search_inventory), not “${id}”`);
     const [r] = await u.get(`inventory?select=id,type,building,location&id=eq.${Number(id)}`);
     if (!r) throw fail(`There's no listing #${id}`);
     return r;
@@ -276,15 +312,15 @@ export function actions(env, token, me, team) {
       const body = String(text ?? "").trim().slice(0, 4000);
       if (!body) throw fail("The note is empty");
       await u.insert("lead_notes", { lead_id: l.id, body, ...(pinned && { pinned: true }) });
-      return { text: `${pinned ? "Pinned" : "Added"} a note on ${l.name}: “${body.slice(0, 80)}”`, url: at(l) };
+      return { text: `${pinned ? "Pinned" : "Added"} a note on ${l.name}: “${body.slice(0, 80)}”`, url: `${at(l)}?tab=Notes` };
     },
     async add_reminder({ lead_id, due, text }) {
       const l = await lead(lead_id);
-      if (!TIME.test(due ?? "")) throw fail("The reminder needs a date and time");
+      if (!TIME.test(due ?? "") || isNaN(new Date(`${due}:00+08:00`))) throw fail("The reminder needs a real date and time, like 2026-12-01T09:00");
       const body = String(text ?? "").trim().slice(0, 1000);
       if (!body) throw fail("Say what the reminder is for");
       await u.insert("reminders", { lead_id: l.id, agent_id: l.agent_id, due_at: new Date(`${due}:00+08:00`).toISOString(), body });
-      return { text: `Set a reminder on ${l.name} for ${say(due)}: “${body.slice(0, 80)}”`, url: at(l) };
+      return { text: `Set a reminder on ${l.name} for ${say(due)}: “${body.slice(0, 80)}”`, url: `${at(l)}?tab=Reminders` };
     },
     async complete_reminder({ id }) {
       const [r] = await u.update(`reminders?id=eq.${Number(id)}&done_at=is.null&select=body,lead_id,leads(name)`, { done_at: new Date().toISOString() });
@@ -340,33 +376,42 @@ export function actions(env, token, me, team) {
       const r = await google.book(new Request("https://mons.internal/", { method: "POST", body: JSON.stringify({ ...b, lead_id: l?.id }) }), env, me);
       const out = await r.json();
       if (!r.ok) throw fail(out.error ?? "The calendar refused it");
-      return { text: `Booked “${String(b.title).slice(0, 80)}” for ${say(b.start)}`, url: "/calendar" };
+      return { text: `Booked “${String(b.title).slice(0, 80)}” for ${say(b.start)}`, url: dayAt(b.start) };
     },
     listing,
     // one at a time, so one bad row doesn't stop the rest; what failed goes back to her to report
     async add_inventory({ items }) {
-      const rows = (Array.isArray(items) ? items : []).map((i) => pick(i, INV_PROPS)).filter((r) => Object.keys(r).length);
-      if (!rows.length) throw fail("There was nothing to add");
+      // each listing checked on its own: one with a bad price is reported, the rest still go in
+      const checked = (Array.isArray(items) ? items : []).map((i) => {
+        try {
+          return { row: fields(i, INV_PROPS) };
+        } catch (e) {
+          return { bad: `${nameOfListing(i ?? {})}: ${e.message}` };
+        }
+      });
+      const rows = checked.map((x) => x.row).filter((r) => r && Object.keys(r).length);
+      const refused = checked.filter((x) => x.bad).map((x) => x.bad);
+      if (!rows.length) throw fail(refused.length ? `None could be added. ${refused.join("; ")}` : "There was nothing to add");
       if (rows.length > MAX_ADD) throw fail(`That's more than ${MAX_ADD} listings; add them in parts`);
       const out = await Promise.allSettled(rows.map((r) => u.insert("inventory", r)));
       const added = out.filter((o) => o.status === "fulfilled").map((o) => o.value[0]);
-      const failed = out.map((o, i) => o.status === "rejected" && `#${i + 1} (${nameOfListing(rows[i])}): ${dbSaid(o.reason).message}`).filter(Boolean);
+      const failed = [...refused, ...out.map((o, i) => o.status === "rejected" && `${nameOfListing(rows[i])}: ${dbSaid(o.reason).message}`).filter(Boolean)];
       if (!added.length) throw fail(`None could be added. ${failed.join("; ")}`);
-      const names = added.map(nameOfListing);
-      return {
-        text: `Added ${added.length} listing${added.length > 1 ? "s" : ""} to the inventory: ${names.slice(0, 5).join("; ")}${names.length > 5 ? ` and ${names.length - 5} more` : ""}${failed.length ? `. Not added: ${failed.join("; ")}` : ""}`,
-        url: "/inventory",
-      };
+      // one line each, linking to its own card; what failed on a line of its own
+      return [
+        ...added.map((r) => ({ text: `Added ${nameOfListing(r)} to the inventory`, url: invAt(r) })),
+        ...(failed.length ? [{ text: `Not added: ${failed.join("; ")}`, url: "/inventory" }] : []),
+      ];
     },
     async update_inventory({ id, changes }) {
       const r = await listing(id);
-      const c = pick(changes, INV_PROPS, true);
+      const c = fields(changes, INV_PROPS, true);
       if (!Object.keys(c).length) throw fail("Nothing to change");
       await u.update(`inventory?id=eq.${r.id}`, c).catch((e) => Promise.reject(dbSaid(e)));
-      return { text: `Updated ${nameOfListing(r)}: ${listChanges(c)}`, url: "/inventory" };
+      return { text: `Updated ${nameOfListing(r)}: ${listChanges(c)}`, url: invAt(r) };
     },
     async add_lead(args) {
-      const row = pick(args, LEAD_PROPS);
+      const row = fields(args, LEAD_PROPS);
       row.name = String(row.name ?? "").trim();
       if (row.name.length < 2) throw fail("The lead needs a name");
       row.mobile = row.mobile ? mobileOf(row.mobile) : ""; // the column can't be empty-null; the form saves "" too
@@ -387,7 +432,7 @@ export function actions(env, token, me, team) {
     },
     async update_lead({ lead_id, changes }) {
       const l = await lead(lead_id);
-      const c = pick(changes, LEAD_PROPS, true);
+      const c = fields(changes, LEAD_PROPS, true);
       if (!Object.keys(c).length) throw fail("Nothing to change");
       if (c.mobile) c.mobile = mobileOf(c.mobile);
       await u.update(`leads?id=eq.${l.id}`, c).catch((e) => Promise.reject(dbSaid(e)));
@@ -409,19 +454,20 @@ async function propose(kind, args, run) {
       summary: `Book “${String(args.title).slice(0, 80)}”, ${say(args.start)} to ${args.end?.slice(11)}${args.location ? ` at ${args.location}` : ""}${
         f.guests.length ? `. Invites ${f.guests.join(", ")}${outside.length ? ` (outside the team: ${outside.join(", ")}; Google emails them the invite and its notes)` : ""}` : ""
       }${notes ? `. Notes: “${notes.slice(0, 160)}${notes.length > 160 ? "…" : ""}”` : ""}`,
-      url: "/calendar",
+      url: dayAt(args.start),
     };
   }
   if (kind === "update_inventory" || kind === "update_lead") {
     const inv = kind === "update_inventory";
-    const c = pick(args.changes, inv ? INV_PROPS : LEAD_PROPS, true);
+    const c = fields(args.changes, inv ? INV_PROPS : LEAD_PROPS, true);
     if (!Object.keys(c).length) throw fail("Nothing to change");
     if (c.mobile) c.mobile = mobileOf(c.mobile); // a bad number refused now, not at Confirm
     const r = inv ? await run.listing(args.id) : await run.lead(args.lead_id);
-    return { summary: `Change ${inv ? nameOfListing(r) : r.name}: ${listChanges(c)}`, url: inv ? "/inventory" : `/leads/${r.id}` };
+    return { summary: `Change ${inv ? nameOfListing(r) : r.name}: ${listChanges(c)}`, url: inv ? invAt(r) : `/leads/${r.id}` };
   }
   const l = await run.lead(args.lead_id);
   if (kind === "set_stage") {
+    if (![...OPEN, "closed", "lost"].includes(args.stage)) throw fail(`“${args.stage}” isn't a stage: ${[...OPEN, "closed", "lost"].join(", ")}`);
     if (args.stage === "lost" && !String(args.lost_reason ?? "").trim()) throw fail("Say why the lead was lost");
     return { summary: `Move ${l.name} from ${l.stage} to ${args.stage}${args.lost_reason ? ` (${args.lost_reason})` : ""}`, url: `/leads/${l.id}` };
   }
@@ -592,7 +638,7 @@ function tools(env, token, team) {
     read_listing: ({ url }) => readListing(url),
     list_templates: () => drafts.listTemplates(u),
     read_template: ({ id }) => drafts.readTemplate(env, token, u, id),
-    search_memory: ({ question, limit }) => recall(env, u, String(question ?? "").slice(0, 500), limit),
+    search_memory: ({ question, limit }) => (String(question ?? "").trim() ? recall(env, u, String(question).slice(0, 500), limit) : { error: "What should I look for?" }),
     // the Matches tab's own scoring (admin/src/match.js), so she and the page agree
     async match_listings({ lead_id, limit }) {
       const [[lead], inventory] = await Promise.all([
@@ -661,7 +707,7 @@ const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.doc
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 export const FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf", "text/plain", "text/csv", DOCX, XLSX];
 const MAX_FILES = 5;
-const MAX_BYTES = 15 * 1048576; // all of a message's files together: under Gemini's 20 MB per request, and the Worker's memory
+const MAX_BYTES = 12 * 1048576; // all of a message's files together: under Gemini's 20 MB per request, and the Worker's memory
 
 // a dropped file as Gemini takes it: images and PDFs as they are, text as text. Read as the person
 // who sent it, so the bucket's own rules apply.
@@ -670,18 +716,17 @@ async function filePart(env, token, f, room) {
     headers: { apikey: env.SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
   });
   if (!r.ok) throw new Error(`storage ${r.status} ${f.path}`);
-  // the real size, from storage, not what the page said
-  room.bytes -= Number(r.headers.get("content-length")) || 0;
+  // the real size, counted from what was read (not what the page or a header said)
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  room.bytes -= bytes.byteLength;
   if (room.bytes < 0) throw new Error("files too big together");
-  if (f.type.startsWith("text/")) return { text: `[file ${f.name}]\n${(await r.text()).slice(0, 60000)}` };
+  if (f.type.startsWith("text/")) return { text: `[file ${f.name}]\n${new TextDecoder().decode(bytes).slice(0, 60000)}` };
   // Word and Excel: their words, since Gemini doesn't read the files themselves
   if (f.type === DOCX || f.type === XLSX) {
-    const bytes = new Uint8Array(await r.arrayBuffer());
     const text = f.type === DOCX ? drafts.docxText(bytes) : drafts.xlsxText(bytes);
     const note = f.type === XLSX ? " (a spreadsheet: one row per line, cells separated by tabs; a 5-digit number in a date column is an Excel date, days since 1900)" : "";
     return { text: `[file ${f.name}${note}]\n${text.slice(0, 60000)}${text.length > 60000 ? "\n… (the rest was cut off: ask them to send it in parts)" : ""}` };
   }
-  const bytes = new Uint8Array(await r.arrayBuffer());
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return { inline_data: { mime_type: f.type, data: btoa(bin) } };
@@ -798,7 +843,9 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
     // said with the last tool results (same turn), so the turns still alternate
     if (last && round > 0)
       contents.at(-1).parts.push({ text: "[That's your last lookup for this message. Answer now with what you found, and say plainly what you didn't get to, so they can ask you to carry on.]" });
-    const out = await gemini(env, body(contents, last));
+    let out = await gemini(env, body(contents, last));
+    // nothing back (a long tool call that came out garbled, or a safety stop): one more try
+    if (!out.candidates?.[0]?.content?.parts?.length && out.candidates?.[0]?.finishReason !== "STOP") out = await gemini(env, body(contents, last));
     const m = out.usageMetadata ?? {};
     usage.tokens += m.totalTokenCount ?? 0;
     // what the tokens went on, for the breakdown under her reply (mons_messages.usage)
@@ -814,7 +861,7 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
     contents.push(content); // as sent, with its thought signatures, which Gemini needs back
     const results = await Promise.all(
       // every call gets an answer (Gemini expects one each); past CALLS in a round, it's a "not now"
-      calls.map(async ({ functionCall: { name, args } }, i) => {
+      calls.map(async ({ functionCall: { id, name, args } }, i) => {
         let result;
         try {
           result = i >= CALLS ? { error: `Too many lookups at once: do this one in your next step` } : run[name] ? await run[name](args ?? {}) : { error: `No tool ${name}` };
@@ -824,7 +871,7 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
         }
         const text = JSON.stringify(result);
         usage.tools = { ...usage.tools, [name]: (usage.tools?.[name] ?? 0) + Math.min(text.length, MAX_RESULT) }; // characters each tool fed her
-        return { functionResponse: { name, response: { result: text.length > MAX_RESULT ? `${text.slice(0, MAX_RESULT)}… (cut short: ask for fewer)` : result } } };
+        return { functionResponse: { ...(id && { id }), name, response: { result: text.length > MAX_RESULT ? `${text.slice(0, MAX_RESULT)}… (cut short: ask for fewer)` : result } } };
       })
     );
     contents.push({ role: "user", parts: results });
@@ -903,13 +950,14 @@ export async function chat(req, env, me, token) {
   const drafted = []; // documents she made this time, attached to her reply
   const act = actions(env, token, me, team);
   const run = tools(env, token, team);
-  const room = () => changes.length + proposals.length < WRITES;
+  let writes = 0;
+  const room = () => writes < WRITES && ++writes; // taken when a write starts: calls made together can't all slip under it
   for (const k of SMALL)
     run[k] = async (args) => {
       if (!room()) return { error: "That's enough changes for one message; ask me to carry on in the next" };
-      const c = await act[k](args);
-      changes.push(c);
-      return { done: c.text };
+      const c = [await act[k](args)].flat(); // add_inventory gives a line per listing
+      changes.push(...c);
+      return { done: c.map((x) => x.text).join("; ") };
     };
   run.draft_document = async (args) => {
     if (drafted.length >= 3) return { error: "That's enough documents for one message; ask me for the next one after" };
@@ -936,7 +984,14 @@ export async function chat(req, env, me, token) {
     const why = /location is not supported/i.test(e.message) ? "Google refused the server region this went through" : (String(e.message).match(/^Gemini \d+/)?.[0] ?? "no answer from Gemini");
     reply = `${changes.length ? "I made the changes below, then lost my connection before I could finish. Please check them." : "I'm sorry, I couldn't reach my thinking just now. Please try again in a moment."}\n\n(${why})`;
   }
-  const [hers] = await db(env).insert("mons_messages", { author: me.email, from_mons: true, body: reply.slice(0, 20000), changes, proposals, attachments: drafted, tokens: usage.tokens, usage: { ...usage, tokens: undefined } });
+  const row = { author: me.email, from_mons: true, body: reply.slice(0, 20000), changes, proposals, attachments: drafted, tokens: usage.tokens, usage: { ...usage, tokens: undefined } };
+  let hers;
+  try {
+    [hers] = await db(env).insert("mons_messages", row);
+  } catch (e) {
+    console.error("mons reply", e);
+    [hers] = await db(env).insert("mons_messages", { author: me.email, from_mons: true, body: row.body, changes, proposals, attachments: drafted, tokens: usage.tokens });
+  }
   return json({ messages: [mine, hers] });
 }
 
@@ -948,25 +1003,29 @@ export async function confirm(req, env, me, token) {
   const [m] = await u.get(`mons_messages?select=id,proposals&from_mons=eq.true&id=eq.${Number(id) || 0}`);
   const p = Number.isInteger(index) ? m?.proposals?.[index] : null;
   if (!p || !BIG.includes(p.kind)) return json({ error: "There's nothing to confirm there" }, 404);
-  if (p.state !== "pending") return json({ error: `That was already ${p.state}${p.by ? ` by ${p.by}` : ""}` }, 409);
-  p.by = me.admin.name;
-  // claim it first: of two Confirms in the same second only one gets the pending row, so a booking
-  // (and its invitations) can't happen twice
-  const claim = m.proposals.map((x, i) => (i === index ? { ...x, state: "running", by: p.by } : x));
-  const [won] = await db(env).update(`mons_messages?id=eq.${m.id}&proposals->${index}->>state=eq.pending`, { proposals: claim });
-  if (!won) return json({ error: "Someone else just answered that one" }, 409);
+  // one left "running" by a Worker that stopped mid-way (over two minutes ago) can be answered again
+  const stuck = p.state === "running" && Date.now() - Date.parse(p.claimed_at ?? 0) > 120_000;
+  if (p.state !== "pending" && !stuck) return json({ error: `That was already ${p.state}${p.by ? ` by ${p.by}` : ""}` }, 409);
+  // only this card changes, in the database itself (mons_proposal_set): two Confirms on one message
+  // can't undo each other, and of two on the same card only the first gets it, so a booking (and its
+  // invitations) can't happen twice
+  const set = (from, patch) => db(env).call("rpc/mons_proposal_set", { method: "POST", body: JSON.stringify({ msg: m.id, idx: index, from_states: from, patch }) });
+  if (!(await set([stuck ? "running" : "pending"], { state: "running", by: me.admin.name, claimed_at: new Date().toISOString() })))
+    return json({ error: "Someone else just answered that one" }, 409);
   let done = null;
-  if (!ok) p.state = "declined";
-  else
+  let result = { state: "declined", by: me.admin.name };
+  if (ok)
     try {
       const team = await u.get("admin_users?select=id,name,email&active=eq.true");
       done = await actions(env, token, me, team)[p.kind](p.args);
-      Object.assign(p, { state: "done", note: done.text, url: done.url });
+      result = { state: "done", by: me.admin.name, note: done.text, url: done.url };
     } catch (e) {
       if (!e.said) console.error("mons confirm", e);
-      Object.assign(p, { state: "failed", note: e.said ? e.message : "It didn't go through" });
+      result = { state: "failed", by: me.admin.name, note: e.said ? e.message : "It didn't go through" };
     }
-  await db(env).update(`mons_messages?id=eq.${m.id}`, { proposals: m.proposals });
+  p.note = result.note;
+  // the outcome, tried twice: a card mustn't stay "running"
+  await set(["running"], result).catch(() => set(["running"], result));
   if (ok)
     await db(env).insert("mons_messages", {
       author: me.email,

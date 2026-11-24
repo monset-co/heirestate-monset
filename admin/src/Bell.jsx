@@ -26,7 +26,7 @@ export default function Bell() {
     // that's subscribed throws (two bells on screen, or one remounting before the last has closed)
     const ch = supabase
       .channel(`bell-${crypto.randomUUID()}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `email=eq.${me.email}` }, ({ new: n }) => setList((l) => [n, ...l].slice(0, 30)))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `email=eq.${me.email}` }, ({ new: n }) => setList((l) => (l.some((x) => x.id === n.id) ? l : [n, ...l].slice(0, 30))))
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [me.email]);
@@ -52,7 +52,7 @@ export default function Bell() {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
-        className="press relative grid size-10 place-items-center rounded-full text-cream/75 hover:bg-side-2 hover:text-cream"
+        className="press relative grid size-11 place-items-center rounded-full text-cream/75 hover:bg-side-2 hover:text-cream"
       >
         <BellIcon className="size-5" aria-hidden />
         <AnimatePresence>

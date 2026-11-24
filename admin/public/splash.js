@@ -3,7 +3,10 @@
 (function () {
   // light or dark (ThemeSwitch.jsx), before anything is painted
   try {
-    if (localStorage.getItem("heir-theme") === "dark") document.documentElement.dataset.theme = "dark";
+    if (localStorage.getItem("heir-theme") === "dark") {
+      document.documentElement.dataset.theme = "dark";
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", "#091120");
+    }
   } catch (e) {}
   var first = true;
   try {

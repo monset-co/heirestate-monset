@@ -39,20 +39,22 @@ export async function index(env) {
   if (!env.AI) return;
   const s = db(env);
   const marks = Object.fromEntries((await s.get("mons_index_state?select=kind,last_id")).map((m) => [m.kind, m.last_id]));
-  for (const [kind, k] of Object.entries(KINDS)) {
-    let after = marks[kind] ?? 0;
-    for (let run = 0; run < RUNS; run++) {
-      const all = await s.get(`${k.path(after)}&order=id&limit=${BATCH}`);
-      if (!all.length) break;
-      const rows = all.filter((r) => k.text(r).trim());
-      if (rows.length) {
-        const vectors = await embed(env, rows.map(k.text));
-        await s.upsert("mons_memory", rows.map((r, i) => ({ kind, ref_id: r.id, embedding: vectors[i] })));
-      }
-      after = all.at(-1).id;
-      await s.upsert("mons_index_state", { kind, last_id: after });
-      if (all.length < BATCH) break;
+  // one kind failing (an embed or a write) doesn't stop the others
+  for (const [kind, k] of Object.entries(KINDS)) await indexKind(s, env, kind, k, marks[kind] ?? 0).catch((e) => console.error("mons memory", kind, e));
+}
+
+async function indexKind(s, env, kind, k, after) {
+  for (let run = 0; run < RUNS; run++) {
+    const all = await s.get(`${k.path(after)}&order=id&limit=${BATCH}`);
+    if (!all.length) return;
+    const rows = all.filter((r) => k.text(r).trim());
+    if (rows.length) {
+      const vectors = await embed(env, rows.map(k.text));
+      await s.upsert("mons_memory", rows.map((r, i) => ({ kind, ref_id: r.id, embedding: vectors[i] })));
     }
+    after = all.at(-1).id;
+    await s.upsert("mons_index_state", { kind, last_id: after });
+    if (all.length < BATCH) return;
   }
 }
 

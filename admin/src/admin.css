@@ -73,6 +73,26 @@
   .text-burgundy, .text-danger { color: #f0a3b3; }
   ::selection { color: #0c1526; }
   :focus-visible { outline-color: var(--color-gold); }
+  /* words on solid gold (today's date, counts, the selected temperature) stay dark navy */
+  .bg-gold { color: #0c1526; }
+  /* navy selection marks (the picked tab, colour, status) light enough to see on the dark page */
+  .ring-navy { --tw-ring-color: #9fb6e0; }
+  .border-navy { border-color: #9fb6e0; }
+  .outline-navy { outline-color: #9fb6e0; }
+  /* sticky notes stay paper: dark ink and light inputs on their pastel */
+  .sticky-note {
+    color-scheme: light;
+    --color-fg: #2a2a22;
+    --color-muted: #5b6168;
+    --color-ink: #14213a;
+    --color-surface: #fffdf9;
+    --color-line: rgb(20 33 58 / 0.12);
+  }
+  .sticky-note .text-navy { color: #14213a; }
+  /* the map: tiles a touch dimmer, its controls in the dark colours */
+  .leaflet-tile-pane { filter: brightness(0.82) contrast(1.08); }
+  .leaflet-bar a,
+  .leaflet-control-attribution { background: var(--color-surface); color: var(--color-fg); border-color: var(--color-line); }
 }
 
 @layer base {

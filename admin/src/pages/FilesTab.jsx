@@ -116,8 +116,8 @@ export default function FilesTab({ leadId, lead, onChecked }) {
   async function remove(f) {
     if (!(await ask({ title: `Delete “${f.file_name}”?`, body: "It can't be undone.", yes: "Delete", danger: true }))) return;
     try {
-      await run(supabase.storage.from(FILES).remove([f.file_path]));
       await run(supabase.from("lead_files").delete().eq("id", f.id));
+      await supabase.storage.from(FILES).remove([f.file_path]);
       setFiles((fs) => fs.filter((x) => x.id !== f.id));
       toast("File deleted");
     } catch (err) {
@@ -365,7 +365,7 @@ function CsvTable({ url }) {
   const [head = [], ...body] = rows;
   // ponytail: every row drawn at once; page or virtualise it if someone opens a 50,000-row export
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-white text-sm text-fg">
+    <div className="min-h-0 flex-1 overflow-auto bg-surface text-sm text-fg">
       <table className="min-w-full border-collapse tabular-nums">
         <thead className="sticky top-0 bg-sunken">
           <tr>{head.map((h, i) => <th key={i} className="border border-line px-3 py-2 text-left font-semibold whitespace-nowrap">{h}</th>)}</tr>
@@ -404,7 +404,7 @@ export function Viewer({ file, url, present, onClose }) {
         </Suspense>
       ) : (
         <div className="flex size-full flex-col">
-          <div className="flex items-center gap-1 px-3 py-2">
+          <div className="flex items-center gap-1 px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2">
             <span className="min-w-0 flex-1 truncate text-sm opacity-70">{file.file_name}</span>
             {dl}
             <button onClick={onClose} autoFocus className={ctrl} aria-label="Close">

@@ -12,6 +12,8 @@ export default function ThemeSwitch() {
   function flip() {
     const next = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
+    // the phone's status bar matches the header (dark's is deeper)
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", next === "dark" ? "#091120" : "#14213a");
     try {
       localStorage.setItem(KEY, next);
     } catch {}
@@ -25,7 +27,7 @@ export default function ThemeSwitch() {
       aria-pressed={dark}
       aria-label="Dark mode"
       title={dark ? "Switch to light" : "Switch to dark"}
-      className="press grid size-10 place-items-center rounded-full text-cream/75 hover:bg-side-2 hover:text-cream"
+      className="press grid size-11 place-items-center rounded-full text-cream/75 hover:bg-side-2 hover:text-cream"
     >
       {dark ? <Sun className="size-5" aria-hidden /> : <Moon className="size-5" aria-hidden />}
     </button>

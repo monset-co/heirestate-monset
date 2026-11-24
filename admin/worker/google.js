@@ -304,7 +304,8 @@ export async function pushReminders(env, at = Date.now()) {
     await notify(env, to.size ? [...to] : null, {
       title: `${before(minutes)}: ${e.summary ?? "a booking"}`,
       body: [when, e.location].filter(Boolean).join(" · "),
-      url: "/calendar",
+      // straight to the booking's day (Calendar reads ?day=)
+      url: `/calendar?day=${String(e.start.dateTime ?? e.start.date).slice(0, 10)}`,
     });
   }
 }

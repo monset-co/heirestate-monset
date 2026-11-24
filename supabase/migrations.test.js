@@ -259,6 +259,18 @@ await admin("insert into storage.objects (bucket_id, name) values ('mons-uploads
 await fails(() => stranger("insert into storage.objects (bucket_id, name) values ('mons-uploads', 'x/y.pdf')"), /row-level security/);
 await fails(() => anon("insert into storage.objects (bucket_id, name) values ('mons-uploads', 'x/y.pdf')"), /row-level security/);
 
+// Confirm changes one card only: two cards on one message answered together both keep their answer
+const [msg] = (await db.query(`insert into mons_messages (author, from_mons, body, proposals) values ('x', true, 'two bookings', '[{"kind":"book","state":"pending"},{"kind":"book","state":"pending"}]') returning id`)).rows;
+const set = async (idx, from, patch) => (await db.query("select mons_proposal_set($1, $2, $3, $4) ok", [msg.id, idx, from, patch])).rows[0].ok;
+assert.equal(await set(0, ["pending"], { state: "running" }), true);
+assert.equal(await set(1, ["pending"], { state: "running" }), true);
+assert.equal(await set(0, ["pending"], { state: "running" }), false, "a card already claimed can't be claimed again");
+assert.equal(await set(0, ["running"], { state: "done", note: "Booked" }), true);
+assert.equal(await set(1, ["running"], { state: "failed" }), true);
+assert.deepEqual((await db.query("select proposals from mons_messages where id = $1", [msg.id])).rows[0].proposals.map((p) => p.state), ["done", "failed"]);
+assert.equal(await set(5, ["pending"], { state: "running" }), false, "no such card");
+await fails(() => agent(`select mons_proposal_set(${msg.id}, 0, '{done}', '{}')`), /permission denied/);
+
 // a bell link stays inside the admin
 await fails(() => db.exec("insert into notifications (email, title, url) values ('agent@example.com', 'x', '//evil.example')"), /notifications_url_check/);
 await fails(() => admin("insert into tasks (body, private, assignee) values ('x', true, 'agent@example.com')"), /private_is_unassigned/);

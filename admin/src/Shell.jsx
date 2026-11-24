@@ -117,7 +117,7 @@ export default function Shell() {
       <div className="app-page bg-bg md:contents">
         {/* phones: the logo and the bell; the pages are in the tab bar */}
         {!wide && (
-        <header className="on-navy sticky top-0 z-20 flex h-16 items-center justify-between gap-2 bg-side px-4 pt-[env(safe-area-inset-top)] text-cream print:hidden md:hidden">
+        <header className="on-navy sticky top-0 z-20 flex box-content h-16 items-center justify-between gap-2 bg-side px-4 pt-[env(safe-area-inset-top)] text-cream print:hidden md:hidden">
           <Mark />
           <span className="flex items-center">
             <ThemeSwitch />
