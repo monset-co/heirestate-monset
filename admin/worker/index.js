@@ -9,7 +9,8 @@
 //   /api/geo?q=…                       where a place is, from OpenStreetMap (for a property's pin)
 //   /api/push/key, /push/task          push notifications: the key to sign up with, a task given (push.js)
 //   /api/mons, /mons/confirm           a message to Mons, the assistant, and her answer; a change she proposed, confirmed (mons.js)
-//   scheduled (every 15 minutes)       emails reminders that have come due; pushes bookings' reminders
+//   scheduled (every 15 minutes)       emails reminders that have come due; pushes bookings' reminders;
+//                                      Mons's own reminders and suggestions (nudges.js)
 //   PublicApi.inquiry()                saves an inquiry from the public sites and alerts its agent
 // Secrets: SUPABASE_SECRET_KEY, RESEND_API_KEY, CF_API_TOKEN, WA_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN, GOOGLE_CLIENT_SECRET, VAPID_PRIVATE_KEY, GEMINI_API_KEY, CF_AIG_TOKEN (wrangler secret put). The rest is in
 // wrangler.admin.jsonc's vars.
@@ -22,6 +23,7 @@ import * as google from "./google.js";
 import * as gmail from "./gmail.js";
 import { notify } from "./push.js";
 import * as mons from "./mons.js";
+import * as nudges from "./nudges.js";
 import * as memory from "./memory.js";
 import * as knowledge from "./knowledge.js";
 
@@ -318,6 +320,8 @@ export default {
   async scheduled(controller, env, ctx) {
     ctx.waitUntil(remind(env).catch((e) => console.error("reminders", e)));
     // Mons's memory: index the notes and WhatsApp messages written since the last run
+    // Mons speaking first: reminders and suggestions in each agent's private chat (nudges.js)
+    ctx.waitUntil(nudges.run(env).catch((e) => console.error("mons nudges", e)));
     ctx.waitUntil(memory.index(env).catch((e) => console.error("mons memory", e)));
     ctx.waitUntil(knowledge.embedPending(env).catch((e) => console.error("knowledge", e)));
     // the calendar's notification reminders, pushed to the agents they're for

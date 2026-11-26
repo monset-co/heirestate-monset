@@ -1,10 +1,12 @@
-// Mons, the team's assistant (admin/worker/mons.js), as a Messenger-style chat. One chat the whole
-// team shares for now: everyone's messages and Mons's answers arrive live for everyone. Files can be
+// Mons, the team's assistant (admin/worker/mons.js), as a Messenger-style chat: the team's shared
+// chat, where everyone's messages arrive live for everyone, or your private one (?chat=me), where she
+// also leaves you reminders and suggestions of her own (admin/worker/nudges.js). The private one is
+// also the panel on every desktop page (MonsPanel, in Shell.jsx), which tells her the page. Files can be
 // dropped, pasted or attached (screenshots, flyers, PDF price lists): they go to the mons-uploads
 // bucket and the Worker hands them to her with the message.
 import { Check, Download, FileText, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { supabase, run } from "../supabase";
 import { api } from "../api";
 import { useMe } from "../me";
@@ -97,6 +99,15 @@ const merge = (list, row) => {
   return [...list.filter((x) => x.id !== row.id), next].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
 };
 const STARTERS = ["Brief me on today", "Which hot leads need a follow-up?", "Any 2BR for rent under ₱30,000?", "What's on the calendar this week?"];
+// in the panel, what to ask about the page that's open
+export function startersFor(page) {
+  if (/^\/leads\/\d+/.test(page ?? "")) return ["Brief me on this lead", "Which listings fit them?", "Draft a follow-up message"];
+  if (/^\/inventory\?(.*&)?open=\d+/.test(page ?? "")) return ["Who might want this unit?", "Write a post for this listing"];
+  if (/^\/inventory/.test(page ?? "")) return ["What did we add this week?", "Any 2BR for rent under ₱30,000?"];
+  if (/^\/calendar/.test(page ?? "")) return ["What's on this week?", "When am I free tomorrow?"];
+  if (/^\/leads/.test(page ?? "")) return ["Which hot leads need a follow-up?", "Who's reserved and missing papers?"];
+  return ["Brief me on today", "What should I do next?"];
+}
 
 // Mons writes a little Markdown: [links](/leads/12) to the admin's own pages, **bold** and lists.
 // Only links inside the admin become links; anything else stays text.
@@ -197,8 +208,12 @@ function Typing() {
   );
 }
 
-export default function Mons() {
+// alone: your private chat with her; page: the admin page it's asked from (the panel); onClose: the panel's ×
+export function MonsChat({ alone = false, page = null, onClose, tabs }) {
   const me = useMe();
+  const panel = !!onClose;
+  const thread = alone ? (me?.email ?? "") : null;
+  const ofThread = (qb) => (alone ? qb.eq("thread", thread) : qb.is("thread", null));
   const [msgs, setMsgs] = useState(null);
   const [people, setPeople] = useState({});
   const [text, setText] = useState("");
@@ -219,15 +234,17 @@ export default function Mons() {
   }
 
   useEffect(() => {
-    run(supabase.from("mons_messages").select("*").order("created_at", { ascending: false }).limit(200)).then((l) => setMsgs(l.reverse()), (e) => setError(e.message));
+    if (alone && !thread) return;
+    setMsgs(null);
+    run(ofThread(supabase.from("mons_messages").select("*")).order("created_at", { ascending: false }).limit(200)).then((l) => setMsgs(l.reverse()), (e) => setError(e.message));
     run(supabase.from("admin_users").select("email,name")).then((l) => setPeople(Object.fromEntries(l.map((p) => [p.email, p.name]))), () => {});
     const ch = supabase
       .channel(`mons-${crypto.randomUUID()}`) // its own name: see Bell.jsx
       // INSERT: a new message; UPDATE: a proposal confirmed or turned down
-      .on("postgres_changes", { event: "*", schema: "public", table: "mons_messages" }, ({ new: n }) => n?.id && setMsgs((l) => l && merge(l, n)))
+      .on("postgres_changes", { event: "*", schema: "public", table: "mons_messages" }, ({ new: n }) => n?.id && (n.thread ?? null) === thread && setMsgs((l) => l && merge(l, n)))
       .subscribe();
     return () => supabase.removeChannel(ch);
-  }, []);
+  }, [thread]);
 
   // braces: Chrome's scrollIntoView now returns a Promise, which React would call as the cleanup
   useLayoutEffect(() => {
@@ -253,7 +270,7 @@ export default function Mons() {
           return { path, name: f.name, type: typeOf(f), size: f.size };
         })
       );
-      const { messages } = await api("mons", { text: body, attachments });
+      const { messages } = await api("mons", { text: body, attachments, private: alone, page });
       setMsgs((l) => messages.reduce(merge, l ?? []));
     } catch (err) {
       setError(err.message);
@@ -268,7 +285,7 @@ export default function Mons() {
     try {
       await api("mons/confirm", { id, index, ok });
       // the change arrives through realtime; fetch it too in case realtime is slow
-      const l = await run(supabase.from("mons_messages").select("*").gte("id", id).order("id"));
+      const l = await run(ofThread(supabase.from("mons_messages").select("*")).gte("id", id).order("id"));
       setMsgs((m) => l.reduce(merge, m ?? []));
     } catch (err) {
       setError(err.message);
@@ -290,7 +307,7 @@ export default function Mons() {
         setDrag(false);
         add(e.dataTransfer.files);
       }}
-      className={`${card} relative flex h-[calc(100dvh-var(--tabbar-h)-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem)] min-h-[26rem] flex-col overflow-hidden md:h-[calc(100dvh-5rem)]`}
+      className={`${card} relative flex flex-col overflow-hidden ${panel ? "h-full" : "h-[calc(100dvh-var(--tabbar-h)-env(safe-area-inset-top)-env(safe-area-inset-bottom)-7.5rem)] min-h-[26rem] md:h-[calc(100dvh-5rem)]"}`}
     >
       {preview && <DocPreview file={preview} onClose={() => setPreview(null)} />}
       {drag && (
@@ -306,9 +323,22 @@ export default function Mons() {
         </span>
         <div className="min-w-0 flex-1">
           <h1 className="font-display text-xl text-ink">Mons</h1>
-          <p className="text-xs text-muted">Your assistant. She looks things up and handles notes, reminders and tasks; bigger changes wait for your Confirm. The whole team shares this chat.</p>
+          <p className="text-xs text-muted">
+            {panel
+              ? "Your private chat. She sees the page you're on."
+              : alone
+                ? "Your private chat with her, where she also leaves you reminders and suggestions. Only you see it."
+                : "Your assistant. She looks things up and handles notes, reminders and tasks; bigger changes wait for your Confirm. The whole team shares this chat."}
+          </p>
         </div>
-        <MonsUsage className="w-full sm:w-64" />
+        {tabs}
+        {panel ? (
+          <button type="button" onClick={onClose} className={btnGhost} aria-label="Close Mons">
+            <X className="size-4" aria-hidden />
+          </button>
+        ) : (
+          <MonsUsage className="w-full sm:w-64" />
+        )}
       </header>
 
       <ol className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-bg/60 px-3 py-4 sm:px-5" aria-live="polite" aria-relevant="additions">
@@ -377,7 +407,7 @@ export default function Mons() {
           <li className="px-2 py-8 text-center text-sm text-muted">
             <p>Hello! I'm Mons. Ask me about your leads, listings, schedule or files.</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {STARTERS.map((s) => (
+              {(panel ? startersFor(page) : STARTERS).map((s) => (
                 <button key={s} type="button" onClick={() => send(null, s)} className="rounded-full border border-line bg-surface px-3.5 py-1.5 text-sm text-fg hover:border-muted/50">
                   {s}
                 </button>
@@ -395,6 +425,15 @@ export default function Mons() {
 
       <div className="border-t border-line p-3">
         <ErrorNote error={error} />
+        {panel && msgs?.length > 0 && !busy && !text && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {startersFor(page).map((s) => (
+              <button key={s} type="button" onClick={() => send(null, s)} className="rounded-full border border-line bg-surface px-3 py-1 text-xs text-fg hover:border-muted/50">
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
         {files.length > 0 && (
           <ul className="mb-2 flex flex-wrap gap-1.5" aria-label="Files to send">
             {files.map((f, i) => (
@@ -439,4 +478,22 @@ export default function Mons() {
       </div>
     </section>
   );
+}
+
+// the Mons page: the team's chat, or your own with her
+export default function Mons() {
+  const [params, setParams] = useSearchParams();
+  const alone = params.get("chat") === "me";
+  const tab = (on, label, to) => (
+    <button type="button" onClick={() => setParams(to, { replace: true })} aria-pressed={on} className={`rounded-full px-3 py-1 text-xs font-semibold ${on ? "bg-navy text-cream" : "text-muted hover:text-fg"}`}>
+      {label}
+    </button>
+  );
+  const tabs = (
+    <div className="flex rounded-full border border-line p-0.5" role="group" aria-label="Which chat">
+      {tab(!alone, "Team", {})}
+      {tab(alone, "Just me", { chat: "me" })}
+    </div>
+  );
+  return <MonsChat key={alone ? "me" : "team"} alone={alone} tabs={tabs} />;
 }

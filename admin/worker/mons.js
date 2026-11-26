@@ -40,7 +40,8 @@ export function persona({ team }) {
   return `You are Mons, the personal assistant inside the Heir Estates admin, a real estate brokerage in Metro Cebu, Philippines.
 You are a secretary: warm, eager to help and thoroughly professional. Short, clear answers, like a capable assistant messaging her boss. Mirror the language you're written in (English, Tagalog, Cebuano or a mix).
 
-This is the team's shared chat, so each message says who wrote it. You see only its last 10 messages; for anything earlier ("like we discussed", "that client from last week"), use search_memory. The newest message starts with the current Manila time and who is asking, in brackets: that is who you're talking with now.
+You talk in the team's shared chat, where each message says who wrote it, and in each person's private chat with you, where you also leave them reminders and suggestions of your own. You see only the chat's last 10 messages; for anything earlier ("like we discussed", "that client from last week"), use search_memory. The newest message starts in brackets with the current Manila time, who is asking (that is who you're talking with now), which chat it is, and the admin page they have open.
+The page they have open is what "this", "here", "this lead" or "this unit" mean: /leads/<id> is lead <id>, /inventory?open=<id> is property <id>, /calendar?day=YYYY-MM-DD is that day. Look it up before answering. Don't bring the page up when the question isn't about it.
 The team: ${team.map((t) => `${t.name} <${t.email}>`).join("; ")}.
 
 How you work:
@@ -883,7 +884,11 @@ export async function answer(env, { system, contents, run, usage = { tokens: 0 }
 // through realtime, so other people in the chat see them too.
 export async function chat(req, env, me, token) {
   if (!env.GEMINI_API_KEY) return json({ error: "Mons isn't set up yet (GEMINI_API_KEY)" }, 501);
-  const { text, attachments: sent } = await req.json().catch(() => ({}));
+  const { text, attachments: sent, private: alone, page: at } = await req.json().catch(() => ({}));
+  // their private chat, or the team's; and the admin page they asked from (a path, nothing more)
+  const thread = alone ? me.email : null;
+  const inThread = thread ? `thread=eq.${q(thread)}` : "thread=is.null";
+  const page = typeof at === "string" && /^\/[\w\-/?=&.%]{0,200}$/.test(at) ? at : null;
   // files they dropped in, already in the mons-uploads bucket: only paths the page makes, only types she reads
   const files = (Array.isArray(sent) ? sent : [])
     .filter((f) => /^[0-9a-f-]{36}\/[^/]{1,200}$/.test(f?.path ?? "") && FILE_TYPES.includes(f.type))
@@ -898,15 +903,16 @@ export async function chat(req, env, me, token) {
   if (recent.length >= 10) return json({ error: "That's a lot of messages at once. Give Mons a minute." }, 429);
   const [team, earlier, used, [cap]] = await Promise.all([
     u.get("admin_users?select=id,name,email&active=eq.true&order=name"),
-    u.get(`mons_messages?select=from_mons,author,body,changes,proposals,attachments&order=created_at.desc&limit=${HISTORY}`),
+    u.get(`mons_messages?select=from_mons,author,body,changes,proposals,attachments&${inThread}&order=created_at.desc&limit=${HISTORY}`),
     u.call("rpc/mons_tokens_this_month", { method: "POST", body: "{}" }),
     u.get("settings?select=value&key=eq.mons_monthly_tokens"),
   ]);
-  const [mine] = await u.insert("mons_messages", { body: said || `Sent ${files.map((f) => f.name).join(", ")}`, attachments: files });
+  const [mine] = await u.insert("mons_messages", { body: said || `Sent ${files.map((f) => f.name).join(", ")}`, attachments: files, thread });
   // the month's cap: past it she says so instead of answering, until the 1st or a higher cap
   if (Number(used) >= monthlyCap(cap?.value)) {
     const [hers] = await db(env).insert("mons_messages", {
       author: me.email,
+      thread,
       from_mons: true,
       body: "I'm sorry, I've used this month's allowance and have to stop here until the 1st. An admin can raise my monthly limit in Settings.",
     });
@@ -936,12 +942,12 @@ export async function chat(req, env, me, token) {
     parts = await Promise.all(files.map((f) => filePart(env, token, f, room)));
   } catch (e) {
     console.error("mons files", e);
-    const [hers] = await db(env).insert("mons_messages", { author: me.email, from_mons: true, body: "I'm sorry, I couldn't open the file you sent. Could you try attaching it again?" });
+    const [hers] = await db(env).insert("mons_messages", { author: me.email, thread, from_mons: true, body: "I'm sorry, I couldn't open the file you sent. Could you try attaching it again?" });
     return json({ messages: [mine, hers] });
   }
   contents.push({
     role: "user",
-    parts: [{ text: `[${now} · asking: ${me.admin.name} <${me.email}>]\n${me.admin.name}: ${said || "(no message, just the files below)"}` }, ...parts],
+    parts: [{ text: `[${now} · asking: ${me.admin.name} <${me.email}> · ${thread ? "their private chat" : "team chat"}${page ? ` · on page ${page}` : ""}]\n${me.admin.name}: ${said || "(no message, just the files below)"}` }, ...parts],
   });
 
   // her tools: the lookups, then the changes, which are written down as they happen
@@ -984,13 +990,13 @@ export async function chat(req, env, me, token) {
     const why = /location is not supported/i.test(e.message) ? "Google refused the server region this went through" : (String(e.message).match(/^Gemini \d+/)?.[0] ?? "no answer from Gemini");
     reply = `${changes.length ? "I made the changes below, then lost my connection before I could finish. Please check them." : "I'm sorry, I couldn't reach my thinking just now. Please try again in a moment."}\n\n(${why})`;
   }
-  const row = { author: me.email, from_mons: true, body: reply.slice(0, 20000), changes, proposals, attachments: drafted, tokens: usage.tokens, usage: { ...usage, tokens: undefined } };
+  const row = { author: me.email, thread, from_mons: true, body: reply.slice(0, 20000), changes, proposals, attachments: drafted, tokens: usage.tokens, usage: { ...usage, tokens: undefined } };
   let hers;
   try {
     [hers] = await db(env).insert("mons_messages", row);
   } catch (e) {
     console.error("mons reply", e);
-    [hers] = await db(env).insert("mons_messages", { author: me.email, from_mons: true, body: row.body, changes, proposals, attachments: drafted, tokens: usage.tokens });
+    [hers] = await db(env).insert("mons_messages", { author: me.email, thread, from_mons: true, body: row.body, changes, proposals, attachments: drafted, tokens: usage.tokens });
   }
   return json({ messages: [mine, hers] });
 }
@@ -1000,7 +1006,7 @@ export async function chat(req, env, me, token) {
 export async function confirm(req, env, me, token) {
   const { id, index, ok } = await req.json().catch(() => ({}));
   const u = db(env, token);
-  const [m] = await u.get(`mons_messages?select=id,proposals&from_mons=eq.true&id=eq.${Number(id) || 0}`);
+  const [m] = await u.get(`mons_messages?select=id,proposals,thread&from_mons=eq.true&id=eq.${Number(id) || 0}`);
   const p = Number.isInteger(index) ? m?.proposals?.[index] : null;
   if (!p || !BIG.includes(p.kind)) return json({ error: "There's nothing to confirm there" }, 404);
   // one left "running" by a Worker that stopped mid-way (over two minutes ago) can be answered again
@@ -1029,6 +1035,7 @@ export async function confirm(req, env, me, token) {
   if (ok)
     await db(env).insert("mons_messages", {
       author: me.email,
+      thread: m.thread,
       from_mons: true,
       body: done ? `Done, ${me.admin.name.split(" ")[0]}.` : `I'm sorry, that didn't go through: ${p.note}.`,
       changes: done ? [done] : [],

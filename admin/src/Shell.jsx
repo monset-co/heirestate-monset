@@ -3,6 +3,7 @@
 // tab grows into a labelled pill, with everything else under More, a bottom sheet the page eases
 // back behind. Each page rises in on navigation.
 import Bell from "./Bell";
+import MonsPanel from "./MonsPanel";
 import ThemeSwitch from "./ThemeSwitch";
 import { BookOpen, BotMessageSquare, Boxes, FolderOpen, Presentation, Building2, CalendarDays, Download, Mail, Inbox, LayoutDashboard, LogOut, Menu, Plus, Sparkles, MessageCircle, Receipt, Settings, StickyNote, Users } from "lucide-react";
 import { AnimatePresence, m as motion } from "motion/react";
@@ -187,6 +188,7 @@ export default function Shell() {
         </div>
       </nav>
 
+      {wide && <MonsPanel />}
       <QuickRing items={nav.filter((n) => n.quick).sort((a, b) => a.quick - b.quick)} />
       <MoreSheet open={more} onClose={() => setMore(false)} groups={groups.map((g) => ({ ...g, items: g.items.filter((n) => !n.tab) })).filter((g) => g.items.length)} />
       <Toaster />
