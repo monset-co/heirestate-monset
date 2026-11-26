@@ -12,6 +12,7 @@ const LazyMap = (p) => (
   </Suspense>
 );
 import { m as motion } from "motion/react";
+import { createPortal } from "react-dom";
 import { Suspense, lazy, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { supabase, run, every } from "../supabase";
@@ -55,7 +56,7 @@ export default function Inventory() {
   const tab = TABS.find((t) => t.id === params.get("tab")) ?? TABS[2];
   const [list, setList] = useState(null);
   const [error, setError] = useState("");
-  const [q, setQ] = useState({ text: "", status: "open", max: "", furnishing: "", when: "", pets: false, where: "", building: "", near: "", km: "2" });
+  const [q, setQ] = useState({ text: "", status: ["open"], max: "", furnishing: [], when: "", pets: false, where: "", building: "", near: "", km: "2" });
   const [view, setView] = useState("table"); // or "map"
   const [open, setOpen] = useState(null); // the row being read or edited; {} for a new one
   const [editing, setEditing] = useState(false);
@@ -93,9 +94,10 @@ export default function Inventory() {
     const rows = (list ?? []).filter(
       (r) =>
         inTab(tab, r) &&
-        (q.status === "" ||
-          (q.status === "open" ? (r.status.some((s) => OPEN.includes(s)) && r.available !== false) || r.available_from > today : q.status === "both" ? r.status.includes("For Rent") && (r.status.includes("For Sale") || r.status.includes("For Assume")) : r.status.includes(q.status))) &&
-        (!q.furnishing || r.furnishing === q.furnishing) &&
+        // several statuses picked: any of them will do; none: every status
+        (!q.status.length ||
+          q.status.some((v) => (v === "open" ? (r.status.some((s) => OPEN.includes(s)) && r.available !== false) || r.available_from > today : v === "both" ? r.status.includes("For Rent") && (r.status.includes("For Sale") || r.status.includes("For Assume")) : r.status.includes(v)))) &&
+        (!q.furnishing.length || q.furnishing.includes(r.furnishing)) &&
         (!q.where || inArea(q.where, r)) &&
         (!q.building || r.building === q.building) &&
         (!q.near || (distance(r, q.near) ?? Infinity) <= Number(q.km)) &&
@@ -111,7 +113,7 @@ export default function Inventory() {
   }, [list, dq, tab.id]);
   const set = (k) => (e) => setQ({ ...q, [k]: e.target.value });
   // which filters are narrowing the list: those stand out, the rest sit gray at their defaults
-  const on = { status: !["open", ""].includes(q.status), max: !!q.max.trim(), where: !!q.where, building: !!q.building, furnishing: !!q.furnishing, when: !!q.when, near: !!q.near, pets: q.pets };
+  const on = { status: q.status.join() !== "open" && q.status.length > 0, max: !!q.max.trim(), where: !!q.where, building: !!q.building, furnishing: q.furnishing.length > 0, when: !!q.when, near: !!q.near, pets: q.pets };
   const active = Object.values(on).filter(Boolean).length;
   const f = (isOn) => (isOn ? `${input} border-navy! font-medium` : `${input} bg-sunken! text-muted!`);
   const [filters, setFilters] = useState(false); // phones: filters shown
@@ -146,7 +148,7 @@ export default function Inventory() {
           <input type="search" placeholder="Search place, type, owner, code…" value={q.text} onChange={(e) => {
             // a fresh search looks through everything: every tab, every status; narrow from there
             if (!q.text.trim() && e.target.value.trim()) {
-              setQ({ ...q, text: e.target.value, status: "" });
+              setQ({ ...q, text: e.target.value, status: [] });
               if (tab.id !== "all") setParams({ tab: "all" }, { replace: true });
             } else setQ({ ...q, text: e.target.value });
           }} className={`${input} pl-9`} />
@@ -164,9 +166,8 @@ export default function Inventory() {
         </button>
         </div>
         <div id="inv-filters" className={`flex-col gap-3 sm:flex sm:flex-row ${filters ? "flex" : "hidden"}`}>
-        <Select aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${f(on.status)} sm:w-48`}>
+        <Select multiple placeholder="Every status" aria-label="Filter by status" value={q.status} onChange={set("status")} className={`${f(on.status)} sm:w-48`}>
           <option value="open">Still available</option>
-          <option value="">Every status</option>
           <option value="both">For rent and for sale</option>
           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </Select>
@@ -190,8 +191,7 @@ export default function Inventory() {
           <option value="">Any building</option>
           {buildingsHere.map((b) => <option key={b} value={b}>{b}</option>)}
         </Select>
-        <Select aria-label="Filter by furnishing" value={q.furnishing} onChange={set("furnishing")} className={`${f(on.furnishing)} sm:w-48`}>
-          <option value="">Any furnishing</option>
+        <Select multiple placeholder="Any furnishing" aria-label="Filter by furnishing" value={q.furnishing} onChange={set("furnishing")} className={`${f(on.furnishing)} sm:w-48`}>
           {FURNISHING.slice(1).map((o) => <option key={o} value={o}>{o}</option>)}
         </Select>
         <Select aria-label="Filter by when it's free" value={q.when} onChange={set("when")} className={`${f(on.when)} sm:w-56`}>
@@ -589,11 +589,15 @@ function QuickStatus({ row: r, onChange }) {
   const [openMenu, setOpenMenu] = useState(null); // where it opens, on screen: the table scrolls inside its card, which would clip it
   const [busy, setBusy] = useState(false);
   const box = useRef(null);
-  useDismiss(box, !!openMenu, () => setOpenMenu(null));
+  const menu = useRef(null);
+  // the menu is drawn in <body> (or the open dialog), not inside the page: a parent with a
+  // transform (the page's rise-in, a card) moves a "fixed" menu away from its badges
+  const inside = { current: { contains: (t) => !!(box.current?.contains(t) || menu.current?.contains(t)) } };
+  useDismiss(inside, !!openMenu, () => setOpenMenu(null));
   // a scroll or resize would leave it floating in the wrong place: close it, as <select> does
   useEffect(() => {
     if (!openMenu) return;
-    const close = (e) => !box.current?.contains(e?.target) && setOpenMenu(null);
+    const close = (e) => !inside.current.contains(e?.target) && setOpenMenu(null);
     addEventListener("scroll", close, true);
     addEventListener("resize", close);
     return () => {
@@ -636,8 +640,9 @@ function QuickStatus({ row: r, onChange }) {
         {r.status.length ? r.status.map((s) => <Badge key={s} value={TONE[s]}>{s}</Badge>) : <Badge value="draft">No status</Badge>}
         <ChevronDown className="size-3.5 self-center text-muted" aria-hidden />
       </button>
-      {openMenu && (
-        <span role="menu" style={openMenu} className="fixed z-50 grid max-h-[calc(100dvh-1rem)] w-48 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_12px_32px_-8px_rgb(12_21_38/0.28)] [animation:fade-in_140ms_var(--ease-out)]">
+      {openMenu &&
+        createPortal(
+        <span ref={menu} role="menu" style={openMenu} onClick={(e) => e.stopPropagation()} className="fixed z-50 grid max-h-[calc(100dvh-1rem)] w-48 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_12px_32px_-8px_rgb(12_21_38/0.28)] [animation:fade-in_140ms_var(--ease-out)]">
           {STATUSES.map((s) => (
             <button
               key={s}
@@ -652,8 +657,9 @@ function QuickStatus({ row: r, onChange }) {
               <Badge value={TONE[s]}>{s}</Badge>
             </button>
           ))}
-        </span>
-      )}
+        </span>,
+          box.current.closest("dialog") ?? document.body
+        )}
     </span>
   );
 }
