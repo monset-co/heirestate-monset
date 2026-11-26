@@ -22,7 +22,7 @@ export const groups = [
     name: null,
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, tab: true },
-      { to: "/mons", label: "Mons", icon: BotMessageSquare },
+      { to: "/mons", label: "Mons", icon: BotMessageSquare, quick: 2 },
     ],
   },
   {
@@ -30,7 +30,7 @@ export const groups = [
     items: [
       { to: "/leads", label: "Leads", icon: Inbox, tab: true },
       { to: "/whatsapp", label: "WhatsApp", icon: MessageCircle, tab: true },
-      { to: "/email", label: "Email", icon: Mail, quick: 2 },
+      { to: "/email", label: "Email", icon: Mail },
       { to: "/calendar", label: "Calendar", icon: CalendarDays, quick: 4 },
       { to: "/notes", label: "Notes", icon: StickyNote, quick: 1 },
     ],
