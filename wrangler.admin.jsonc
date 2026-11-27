@@ -38,6 +38,8 @@
     "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_UZLXN7SPtreNz2-ZVzoijA_px4mvXhN",
     "AI_GATEWAY": "default",
     "MONS_MODEL": "gemini-3.8-flash",
+    // edit_image: photo edits (brighten, declutter, virtual staging)
+    "MONS_IMAGE_MODEL": "gemini-3.1-flash-image",
     "DOMAIN": "heirestates.com",
     "ADMIN_URL": "https://admin.heirestates.com",
     // a verified sender on heirestates.com in Resend
