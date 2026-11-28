@@ -21,6 +21,10 @@ Fine to do freely: brighten, fix white balance, straighten verticals, sharpen, c
 
 Fine but must be labelled "Virtually staged" on the photo: adding furniture to an empty room, removing furniture or clutter, removing cars or people, replacing a grey sky. Keep the unstaged photo in the set too.
 
+Fine but must be labelled "AI-enhanced" on the photo: de-blurring, or rebuilding a small or low-resolution photo at higher resolution. The model invents the missing detail, so check textures, text and small objects against the original before posting.
+
+Document scans (cleaning a phone photo of a title, ID or contract into a flat scan) are for reading only, not certified copies. Blurry text can be redrawn wrong: check names, numbers and dates against the paper.
+
 Never: hiding cracks, stains or water damage, changing the view out of a window, making a room look larger than it is, or showing finishes the unit doesn't have. Under RA 7394 an advertisement that misleads about a product's real condition is a deceptive sales act, and a buyer who finds out at the viewing is a lost lead.
 
 ## Post design: layout and hierarchy
